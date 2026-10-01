@@ -1,11 +1,8 @@
 import http from 'k6/http'
 import { check } from 'k6'
 import type { Options } from 'k6/options'
-
-const url = __ENV.URL
-if (!url) {
-  throw new Error('URL is required, e.g. URL=http://localhost:3000/api/v1/health')
-}
+import { pickTarget, reqParams, type Target } from './pick-live.ts'
+import { summarize } from './summary.ts'
 
 const rate = Number(__ENV.RATE || 100)
 if (!Number.isInteger(rate) || rate <= 0) {
@@ -13,8 +10,6 @@ if (!Number.isInteger(rate) || rate <= 0) {
 }
 
 const duration = __ENV.DURATION || '30s'
-const encoding = __ENV.ENCODING || 'identity'
-const timeout = __ENV.TIMEOUT || '8s'
 const preAllocatedVUs = Math.min(Math.max(rate, 20), 200)
 const maxVUs = Math.min(Math.max(rate * 2, 100), 800)
 
@@ -30,20 +25,19 @@ export const options: Options = {
       gracefulStop: '10s',
     },
   },
-  discardResponseBodies: true,
   summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
-  tags: { target: url, encoding },
 }
 
-const params = {
-  headers: { 'Accept-Encoding': encoding },
-  timeout,
+export function setup(): Target {
+  return pickTarget()
 }
 
-export default () => {
-  const res = http.get(url, params)
+export default (target: Target) => {
+  const res = http.get(target.url, reqParams)
   check(res, {
     'status 200': (r) => r.status === 200,
     'got a response': (r) => r.status !== 0,
   })
 }
+
+export const handleSummary = summarize('load')

@@ -1,6 +1,7 @@
 import http from 'k6/http'
 import type { Options } from 'k6/options'
-import { pickUrl, reqParams } from './pick-live.ts'
+import { pickTarget, reqParams, type Target } from './pick-live.ts'
+import { summarize } from './summary.ts'
 
 export const options: Options = {
   scenarios: {
@@ -22,10 +23,12 @@ export const options: Options = {
   summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
 }
 
-export function setup() {
-  return { url: pickUrl() }
+export function setup(): Target {
+  return pickTarget()
 }
 
-export default function (data: { url: string }) {
-  http.get(data.url, reqParams)
+export default function (target: Target) {
+  http.get(target.url, reqParams)
 }
+
+export const handleSummary = summarize('break')

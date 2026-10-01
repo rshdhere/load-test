@@ -3,6 +3,8 @@ import type { RefinedParams, ResponseType } from 'k6/http'
 
 const healthPath = '/api/v1/health'
 
+export type Target = { url: string; server: string }
+
 export const reqParams: RefinedParams<ResponseType> = {
   headers: { 'Accept-Encoding': __ENV.ENCODING || 'identity' },
   timeout: __ENV.TIMEOUT || '8s',
@@ -16,7 +18,7 @@ function candidates(): string[] {
   return ports.map((port) => `http://${host}:${port}${healthPath}`)
 }
 
-export function pickUrl(): string {
+export function pickTarget(): Target {
   const tried = candidates()
   for (const url of tried) {
     const res = http.get(url, { timeout: '2s', tags: { name: 'pick-live' } })
@@ -27,7 +29,7 @@ export function pickUrl(): string {
       server = String((res.json() as { server?: string }).server ?? server)
     } catch {}
     console.log(`target: ${server} at ${url}`)
-    return url
+    return { url, server }
   }
   throw new Error(`no live server found, tried: ${tried.join(', ')}`)
 }
