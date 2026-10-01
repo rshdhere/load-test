@@ -1,0 +1,64 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Load Test Servers API",
+    "version": "1.0.0",
+    "description": "Shared API contract implemented by every server in this repo (bun, node, express, fastify, fiber)."
+  },
+  "servers": [{ "url": "http://localhost:3000" }],
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "summary": "Health check",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Server is healthy",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Health" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/docs": {
+      "get": {
+        "summary": "Interactive API docs (Swagger UI)",
+        "operationId": "getDocs",
+        "responses": {
+          "200": {
+            "description": "HTML page rendering this spec",
+            "content": { "text/html": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/openapi.json": {
+      "get": {
+        "summary": "Raw OpenAPI spec",
+        "operationId": "getOpenApiSpec",
+        "responses": {
+          "200": {
+            "description": "This document",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Health": {
+        "type": "object",
+        "required": ["status", "server", "uptime"],
+        "properties": {
+          "status": { "type": "string", "enum": ["ok"] },
+          "server": { "type": "string", "examples": ["bun"] },
+          "uptime": { "type": "number", "description": "Process uptime in seconds" }
+        }
+      }
+    }
+  }
+}
