@@ -1,0 +1,14 @@
+{
+  "name": "k6-bench",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "load": "k6 run src/load.ts",
+    "break": "k6 run src/break.ts",
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "@types/k6": "^2.3.0",
+    "typescript": "^7.0.2"
+  }
+}
