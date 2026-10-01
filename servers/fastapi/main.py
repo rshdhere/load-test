@@ -34,4 +34,10 @@ async def not_found(_request: Request, exc: HTTPException):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 3000)))
+    # The GIL keeps one process on one core, so scale out with worker processes
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 3000)),
+        workers=int(os.environ.get("WORKERS", os.cpu_count() or 1)),
+    )
