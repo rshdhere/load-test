@@ -1,0 +1,2 @@
+# Keep the GitHub language bar about server implementations, not benchmark tooling
+bench/** linguist-detectable=false
