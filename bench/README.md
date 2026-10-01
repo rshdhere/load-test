@@ -7,11 +7,13 @@ k6 scripts that load-test the servers in [`../servers`](../servers). Every serve
 ```
 bench/
 ├── k6/
+│   ├── grafana.sh         runs a script with live metrics streamed to Prometheus
 │   └── src/
 │       ├── load.ts        constant request rate for a fixed duration
 │       ├── break.ts       ramps 0 → 200 → 500 → 1000 → 0 VUs to find the breaking point
 │       ├── pick-live.ts   finds a live server via /api/v1/health before the test starts
 │       └── summary.ts     prints a short summary and saves each run to ../results
+├── grafana/               Prometheus + Grafana stack with the k6 dashboard preloaded
 └── results/               one JSON file per run
 ```
 
@@ -57,6 +59,30 @@ Commit the runs worth keeping so results can be compared across servers and over
 ```sh
 jq -r '[.server, .script, (.reqPerSec|floor), .latencyMs["p(99)"], .failedRate] | @tsv' results/*.json
 ```
+
+## Live dashboard (Grafana)
+
+`grafana/` runs Prometheus and Grafana in Docker. k6 pushes metrics to Prometheus while the test runs, and Grafana shows them on the official [k6 Prometheus dashboard](https://grafana.com/grafana/dashboards/19665).
+
+```sh
+docker compose -f bench/grafana/compose.yaml up -d    # once; keeps running
+
+cd bench/k6
+npm run load:grafana             # same settings as `npm run load`
+npm run break:grafana
+TESTID=django-break npm run break:grafana
+```
+
+Open <http://localhost:3001> and pick the run from the **testid** dropdown at the top of the dashboard. Each run gets a `testid` of `<script>-<timestamp>` unless `TESTID` is set, so name runs after the server you are testing to find them later.
+
+| Service    | URL                     | Notes                                                       |
+| ---------- | ----------------------- | ----------------------------------------------------------- |
+| Grafana    | <http://localhost:3001> | Anonymous viewing; log in as `admin` / `admin` to edit      |
+| Prometheus | <http://localhost:9090> | Accepts k6 remote write; keeps 30 days of data              |
+
+Grafana uses port 3001 because every server defaults to 3000. `grafana.sh` sends p50/p90/p95/p99/avg/min/max latency, pushing every second; override any `K6_PROMETHEUS_RW_*` variable to change that. The JSON summaries in `results/` are still written as usual.
+
+Stop the stack with `docker compose -f bench/grafana/compose.yaml down`; add `-v` to also delete the stored metrics and Grafana state.
 
 ## Fair comparisons
 

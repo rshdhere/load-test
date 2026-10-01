@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "load": "k6 run src/load.ts",
+    "load:grafana": "./grafana.sh load",
     "break": "k6 run src/break.ts",
+    "break:grafana": "./grafana.sh break",
     "typecheck": "tsc"
   },
   "devDependencies": {
