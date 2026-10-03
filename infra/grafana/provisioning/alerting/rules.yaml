@@ -1,0 +1,132 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: o11y
+    folder: Fleet
+    interval: 10s
+    rules:
+      - uid: load-error-rate
+        title: High error rate during load test
+        condition: C
+        for: 20s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "{{ $labels.testid }}: {{ if $values.B.Value }}{{ humanizePercentage $values.B.Value }}{{ else }}over 2%{{ end }} of requests are failing"
+          description: More than 2% of requests failed over the last 30s, which also fails the break test threshold.
+        labels:
+          severity: critical
+        data:
+          - refId: A
+            relativeTimeRange: { from: 60, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                (sum by (testid, server) (rate(k6_http_reqs_total{expected_response="false",group!~"::setup|::teardown"}[30s]))
+                or sum by (testid, server) (rate(k6_http_reqs_total{group!~"::setup|::teardown"}[30s])) * 0)
+                / sum by (testid, server) (rate(k6_http_reqs_total{group!~"::setup|::teardown"}[30s]))
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions: [{ evaluator: { type: gt, params: [0.02] } }]
+
+      - uid: load-p99-latency
+        title: High p99 latency during load test
+        condition: C
+        for: 30s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "{{ $labels.testid }}: p99 latency is {{ if $values.B.Value }}{{ humanizeDuration $values.B.Value }}{{ else }}above 500ms{{ end }}"
+          description: The median of 1s-window p99 latency over the last 30s is above 500 ms.
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            relativeTimeRange: { from: 60, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                quantile_over_time(0.5,
+                (max by (testid, server) (k6_http_req_duration_p99{group!~"::setup|::teardown"}))[30s:1s])
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions: [{ evaluator: { type: gt, params: [0.5] } }]
+
+      - uid: load-accept-overflow
+        title: Server accept queue overflowing
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "The kernel is dropping {{ if $values.B.Value }}{{ humanize $values.B.Value }}{{ else }}some{{ end }} connections/s"
+          description: The server's listen backlog is full, so new connections are being refused before the server sees them.
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            relativeTimeRange: { from: 60, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: rate(node_netstat_TcpExt_ListenOverflows[30s])
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions: [{ evaluator: { type: gt, params: [0] } }]
+
+      - uid: server-down
+        title: Server is down
+        condition: C
+        for: 1m
+        noDataState: Alerting
+        execErrState: Error
+        annotations:
+          summary: "{{ $labels.server }} has failed its health check for over a minute"
+          description: The blackbox probe of /api/v1/health is failing; check the container logs with `docker compose logs {{ $labels.server }}`.
+        labels:
+          severity: critical
+        data:
+          - refId: A
+            relativeTimeRange: { from: 60, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: max by (server) (probe_success{job="server-health"})
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions: [{ evaluator: { type: lt, params: [1] } }]
