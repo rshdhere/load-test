@@ -1,0 +1,35 @@
+{
+  "script": "break",
+  "server": "node",
+  "url": "http://localhost:3000/api/v1/health",
+  "finishedAt": "2026-10-01T20:47:55.623Z",
+  "durationSec": 60.009056763000004,
+  "env": {
+    "rate": null,
+    "duration": null,
+    "encoding": "identity"
+  },
+  "requests": 1204448,
+  "reqPerSec": 20071.10367951377,
+  "failedRate": 0,
+  "droppedIterations": 0,
+  "maxVUs": 1000,
+  "latencyMs": {
+    "avg": 21.01695298994775,
+    "min": 0.052179,
+    "med": 18.619176500000002,
+    "p(90)": 40.95981,
+    "p(95)": 45.303971,
+    "p(99)": 54.21445772000005,
+    "max": 2642.931128
+  },
+  "bytesReceived": 268521524,
+  "thresholds": [
+    {
+      "metric": "http_req_failed",
+      "expr": "rate<0.02",
+      "ok": true
+    }
+  ],
+  "passed": true
+}

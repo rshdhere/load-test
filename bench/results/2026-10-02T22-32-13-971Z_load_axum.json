@@ -1,0 +1,29 @@
+{
+  "script": "load",
+  "server": "axum",
+  "url": "http://localhost:3102/api/v1/health",
+  "finishedAt": "2026-10-02T22:32:13.971Z",
+  "durationSec": 10.009146642,
+  "env": {
+    "rate": "1000",
+    "duration": "10s",
+    "encoding": "identity"
+  },
+  "requests": 10002,
+  "reqPerSec": 999.2859888804096,
+  "failedRate": 0,
+  "droppedIterations": 0,
+  "maxVUs": 200,
+  "latencyMs": {
+    "p(99)": 5.88620394999999,
+    "max": 16.741312,
+    "avg": 1.2232698819236127,
+    "min": 0.64366,
+    "med": 1.0216720000000001,
+    "p(90)": 1.4692229,
+    "p(95)": 2.0555195999999953
+  },
+  "bytesReceived": 1619239,
+  "thresholds": [],
+  "passed": true
+}

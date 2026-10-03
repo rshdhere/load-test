@@ -1,0 +1,29 @@
+{
+  "script": "load",
+  "server": "fastapi",
+  "url": "http://localhost:3107/api/v1/health",
+  "finishedAt": "2026-10-02T22:33:08.126Z",
+  "durationSec": 10.019395797,
+  "env": {
+    "rate": "1000",
+    "duration": "10s",
+    "encoding": "identity"
+  },
+  "requests": 9818,
+  "reqPerSec": 979.8994070021366,
+  "failedRate": 0,
+  "droppedIterations": 184,
+  "maxVUs": 302,
+  "latencyMs": {
+    "max": 915.573009,
+    "avg": 21.02756616021605,
+    "min": 1.183738,
+    "med": 2.1259005,
+    "p(90)": 8.093316600000007,
+    "p(95)": 68.52925519999995,
+    "p(99)": 428.7191120899999
+  },
+  "bytesReceived": 1826826,
+  "thresholds": [],
+  "passed": true
+}

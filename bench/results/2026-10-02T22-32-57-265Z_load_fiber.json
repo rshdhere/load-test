@@ -1,0 +1,29 @@
+{
+  "script": "load",
+  "server": "fiber",
+  "url": "http://localhost:3106/api/v1/health",
+  "finishedAt": "2026-10-02T22:32:57.265Z",
+  "durationSec": 10.00529506,
+  "env": {
+    "rate": "1000",
+    "duration": "10s",
+    "encoding": "identity"
+  },
+  "requests": 10001,
+  "reqPerSec": 999.5707213056444,
+  "failedRate": 0,
+  "droppedIterations": 0,
+  "maxVUs": 200,
+  "latencyMs": {
+    "p(95)": 2.840735,
+    "p(99)": 67.369491,
+    "max": 163.626637,
+    "avg": 2.8237724836516302,
+    "min": 0.687584,
+    "med": 1.086485,
+    "p(90)": 1.726508
+  },
+  "bytesReceived": 1629094,
+  "thresholds": [],
+  "passed": true
+}

@@ -1,0 +1,29 @@
+{
+  "script": "load",
+  "server": "go",
+  "url": "http://localhost:3104/api/v1/health",
+  "finishedAt": "2026-10-02T22:32:35.655Z",
+  "durationSec": 10.011475366,
+  "env": {
+    "rate": "1000",
+    "duration": "10s",
+    "encoding": "identity"
+  },
+  "requests": 9913,
+  "reqPerSec": 990.1637508558995,
+  "failedRate": 0,
+  "droppedIterations": 88,
+  "maxVUs": 255,
+  "latencyMs": {
+    "p(95)": 4.3128811999999925,
+    "p(99)": 268.31442311999945,
+    "max": 600.167627,
+    "avg": 7.407792171290233,
+    "min": 0.70709,
+    "med": 1.130637,
+    "p(90)": 1.9580468000000004
+  },
+  "bytesReceived": 1594986,
+  "thresholds": [],
+  "passed": true
+}

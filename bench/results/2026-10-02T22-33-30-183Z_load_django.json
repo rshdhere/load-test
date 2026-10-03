@@ -1,0 +1,29 @@
+{
+  "script": "load",
+  "server": "django",
+  "url": "http://localhost:3109/api/v1/health",
+  "finishedAt": "2026-10-02T22:33:30.183Z",
+  "durationSec": 10.21405657,
+  "env": {
+    "rate": "1000",
+    "duration": "10s",
+    "encoding": "identity"
+  },
+  "requests": 9996,
+  "reqPerSec": 978.6513254057687,
+  "failedRate": 0,
+  "droppedIterations": 6,
+  "maxVUs": 205,
+  "latencyMs": {
+    "p(95)": 192.54862625,
+    "p(99)": 213.30458234999998,
+    "max": 218.70679,
+    "avg": 45.203710357042645,
+    "min": 1.007807,
+    "med": 6.2903345,
+    "p(90)": 172.9145465
+  },
+  "bytesReceived": 2288163,
+  "thresholds": [],
+  "passed": true
+}

@@ -1,0 +1,29 @@
+{
+  "script": "load",
+  "server": "gin",
+  "url": "http://localhost:3105/api/v1/health",
+  "finishedAt": "2026-10-02T22:32:46.491Z",
+  "durationSec": 10.008301294,
+  "env": {
+    "rate": "1000",
+    "duration": "10s",
+    "encoding": "identity"
+  },
+  "requests": 10002,
+  "reqPerSec": 999.3703932550693,
+  "failedRate": 0,
+  "droppedIterations": 0,
+  "maxVUs": 200,
+  "latencyMs": {
+    "med": 1.1538655,
+    "p(90)": 1.7257978999999999,
+    "p(95)": 2.311292299999998,
+    "p(99)": 6.05522639,
+    "max": 29.399107,
+    "avg": 1.405425537192562,
+    "min": 0.729142
+  },
+  "bytesReceived": 1759265,
+  "thresholds": [],
+  "passed": true
+}

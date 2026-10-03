@@ -1,0 +1,29 @@
+{
+  "script": "load",
+  "server": "bun",
+  "url": "http://localhost:3000/api/v1/health",
+  "finishedAt": "2026-10-02T22:02:45.245Z",
+  "durationSec": 30.006694621999998,
+  "env": {
+    "rate": "5000",
+    "duration": "30s",
+    "encoding": "identity"
+  },
+  "requests": 150002,
+  "reqPerSec": 4998.951130392851,
+  "failedRate": 0,
+  "droppedIterations": 0,
+  "maxVUs": 200,
+  "latencyMs": {
+    "p(99)": 3.7327711499999845,
+    "max": 37.024524,
+    "avg": 0.3463616073385728,
+    "min": 0.049694,
+    "med": 0.174242,
+    "p(90)": 0.4363998999999999,
+    "p(95)": 0.9031659999999989
+  },
+  "bytesReceived": 26275628,
+  "thresholds": [],
+  "passed": true
+}

@@ -1,0 +1,29 @@
+{
+  "script": "load",
+  "server": "fastify",
+  "url": "http://localhost:3113/api/v1/health",
+  "finishedAt": "2026-10-02T22:34:13.295Z",
+  "durationSec": 10.007436287,
+  "env": {
+    "rate": "1000",
+    "duration": "10s",
+    "encoding": "identity"
+  },
+  "requests": 9850,
+  "reqPerSec": 984.2680700146434,
+  "failedRate": 0,
+  "droppedIterations": 152,
+  "maxVUs": 296,
+  "latencyMs": {
+    "avg": 16.7815623457868,
+    "min": 0.801268,
+    "med": 1.3093305000000002,
+    "p(90)": 4.035078000000002,
+    "p(95)": 126.27769274999962,
+    "p(99)": 369.51208208000014,
+    "max": 467.642267
+  },
+  "bytesReceived": 2244735,
+  "thresholds": [],
+  "passed": true
+}

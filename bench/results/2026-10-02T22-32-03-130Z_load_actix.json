@@ -1,0 +1,29 @@
+{
+  "script": "load",
+  "server": "actix",
+  "url": "http://localhost:3101/api/v1/health",
+  "finishedAt": "2026-10-02T22:32:03.130Z",
+  "durationSec": 10.009063197,
+  "env": {
+    "rate": "1000",
+    "duration": "10s",
+    "encoding": "identity"
+  },
+  "requests": 10002,
+  "reqPerSec": 999.2943198718021,
+  "failedRate": 0,
+  "droppedIterations": 0,
+  "maxVUs": 200,
+  "latencyMs": {
+    "med": 1.051096,
+    "p(90)": 1.7566,
+    "p(95)": 2.7366399999999995,
+    "p(99)": 10.04701937,
+    "max": 67.473474,
+    "avg": 1.5556535309938009,
+    "min": 0.583156
+  },
+  "bytesReceived": 1629234,
+  "thresholds": [],
+  "passed": true
+}

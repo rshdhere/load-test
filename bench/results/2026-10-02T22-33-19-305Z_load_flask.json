@@ -1,0 +1,29 @@
+{
+  "script": "load",
+  "server": "flask",
+  "url": "http://localhost:3108/api/v1/health",
+  "finishedAt": "2026-10-02T22:33:19.305Z",
+  "durationSec": 10.457431056999999,
+  "env": {
+    "rate": "1000",
+    "duration": "10s",
+    "encoding": "identity"
+  },
+  "requests": 8631,
+  "reqPerSec": 825.3461058414129,
+  "failedRate": 0,
+  "droppedIterations": 1371,
+  "maxVUs": 800,
+  "latencyMs": {
+    "p(90)": 1147.304341,
+    "p(95)": 1435.3680650000001,
+    "p(99)": 1610.6135781,
+    "max": 1789.429195,
+    "avg": 710.3745020070675,
+    "min": 3.817434,
+    "med": 675.209814
+  },
+  "bytesReceived": 1768392,
+  "thresholds": [],
+  "passed": true
+}

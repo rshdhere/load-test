@@ -1,0 +1,29 @@
+{
+  "script": "load",
+  "server": "tokio",
+  "url": "http://localhost:3103/api/v1/health",
+  "finishedAt": "2026-10-02T22:32:24.685Z",
+  "durationSec": 10.005614753,
+  "env": {
+    "rate": "1000",
+    "duration": "10s",
+    "encoding": "identity"
+  },
+  "requests": 10002,
+  "reqPerSec": 999.6387275455597,
+  "failedRate": 0,
+  "droppedIterations": 0,
+  "maxVUs": 200,
+  "latencyMs": {
+    "max": 130.28297,
+    "avg": 2.4378091809638005,
+    "min": 0.652327,
+    "med": 1.0793955,
+    "p(90)": 1.6675849,
+    "p(95)": 3.018845399999994,
+    "p(99)": 48.84018435999997
+  },
+  "bytesReceived": 1629232,
+  "thresholds": [],
+  "passed": true
+}
