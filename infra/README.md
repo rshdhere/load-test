@@ -99,10 +99,32 @@ On Docker Desktop the host dashboards describe Docker's Linux VM rather than you
 
 ### Updating
 
+Pushes to `main` deploy themselves (see below). To update by hand:
+
 ```sh
 git pull
-docker compose -f infra/compose.yaml up -d --build
+infra/deploy.sh
 ```
+
+`deploy.sh` rebuilds, restarts the stack with `--remove-orphans`, and fails unless Grafana and the runner answer on `127.0.0.1`. It never touches the nginx site, because certbot edits the installed copy; after changing `nginx/o11y.conf`, apply the change to `/etc/nginx/sites-available/o11y.conf` yourself.
+
+### CI/CD
+
+`.github/workflows/ci.yml` runs on every push and pull request:
+
+- **checks**: dashboards and `prometheus/targets.json` match `generate.py`, the compose file, Prometheus config and nginx site are valid, the runner vets and builds, the k6 scripts typecheck, and the shell scripts pass shellcheck
+- **images**: builds all 14 images (cached between runs)
+- **deploy** (`main` only, after both pass): SSHes into the VPS, resets the checkout to the tested commit, runs `infra/deploy.sh`, then checks <https://o11y.raashed.com> answers
+
+Deploy uses the `production` environment, so it can be gated with required reviewers in the repository settings. It is skipped until the variable `VPS_APP_DIR` is set, and needs these secrets:
+
+| Name              | Kind     | Value                                                              |
+| ----------------- | -------- | ------------------------------------------------------------------ |
+| `VPS_HOST`        | secret   | The VPS's address                                                  |
+| `VPS_USER`        | secret   | The deploy user; must own the checkout and be in the `docker` group |
+| `VPS_SSH_KEY`     | secret   | Private key whose public half is in that user's `authorized_keys`   |
+| `VPS_KNOWN_HOSTS` | secret   | Output of `ssh-keyscan <host>`, so CI refuses an unexpected host key |
+| `VPS_APP_DIR`     | variable | Absolute path of the checkout on the VPS                            |
 
 ### What visitors can and cannot do
 

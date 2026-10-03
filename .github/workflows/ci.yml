@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Dashboards and probe targets match servers.json
+        run: |
+          python3 infra/grafana/generate.py
+          git diff --exit-code -- infra/grafana/dashboards infra/prometheus/targets.json \
+            || { echo "::error::Run 'python3 infra/grafana/generate.py' and commit the result"; exit 1; }
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: infra/runner/go.mod
+          cache: false
+      - name: Runner vets and builds
+        working-directory: infra/runner
+        run: |
+          go vet ./...
+          go build ./...
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: bench/k6/package-lock.json
+      - name: k6 scripts typecheck
+        working-directory: bench/k6
+        run: |
+          npm ci
+          npm run typecheck
+
+      - name: Compose file is valid
+        run: |
+          cp infra/.env.example infra/.env
+          docker compose -f infra/compose.yaml config -q
+
+      - name: Prometheus config is valid
+        run: |
+          docker run --rm -v "$PWD/infra/prometheus:/etc/prometheus:ro" \
+            --entrypoint promtool prom/prometheus:v3.15.0 check config /etc/prometheus/prometheus.yaml
+
+      - name: nginx site is valid
+        run: |
+          docker run --rm -v "$PWD/infra/nginx/o11y.conf:/etc/nginx/conf.d/default.conf:ro" \
+            nginx:stable-alpine nginx -t
+
+      - name: Shell scripts pass shellcheck
+        run: shellcheck -S warning bench/k6/grafana.sh infra/deploy.sh
+
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: actix, context: servers, file: servers/actix/Dockerfile }
+          - { name: axum, context: servers, file: servers/axum/Dockerfile }
+          - { name: tokio, context: servers, file: servers/tokio/Dockerfile }
+          - { name: go, context: servers, file: servers/go/Dockerfile }
+          - { name: gin, context: servers, file: servers/gin/Dockerfile }
+          - { name: fiber, context: servers, file: servers/fiber/Dockerfile }
+          - { name: fastapi, context: servers, file: servers/fastapi/Dockerfile }
+          - { name: flask, context: servers, file: servers/flask/Dockerfile }
+          - { name: django, context: servers, file: servers/django/Dockerfile }
+          - { name: bun, context: servers, file: servers/bun/Dockerfile }
+          - { name: node, context: servers, file: servers/node/Dockerfile }
+          - { name: express, context: servers, file: servers/express/Dockerfile }
+          - { name: fastify, context: servers, file: servers/fastify/Dockerfile }
+          - { name: runner, context: ., file: infra/runner/Dockerfile }
+    name: image (${{ matrix.name }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,scope=${{ matrix.name }},mode=max
+
+  # Pulls the tested commit on the VPS and runs infra/deploy.sh there.
+  # Needs secrets VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS and
+  # variable VPS_APP_DIR (the checkout's absolute path); skipped until VPS_APP_DIR is set.
+  deploy:
+    needs: [checks, images]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.VPS_APP_DIR != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://o11y.raashed.com
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          APP_DIR: ${{ vars.VPS_APP_DIR }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" \
+            "set -e; cd '$APP_DIR' && git fetch --quiet origin main && git reset --hard '${{ github.sha }}' && infra/deploy.sh"
+
+      - name: Public site answers
+        run: |
+          for path in /api/health /run/; do
+            curl -fsS --retry 10 --retry-delay 3 --retry-all-errors -o /dev/null "https://o11y.raashed.com$path"
+            echo "ok: $path"
+          done
