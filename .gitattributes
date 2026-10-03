@@ -1,2 +1,4 @@
-# Keep the GitHub language bar about server implementations, not benchmark tooling
+# Keep the GitHub language bar about server implementations, not tooling or packaging
 bench/** linguist-detectable=false
+infra/** linguist-detectable=false
+servers/**/Dockerfile linguist-detectable=false
