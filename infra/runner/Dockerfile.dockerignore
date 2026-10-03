@@ -1,0 +1,4 @@
+*
+!bench/k6/src
+!infra/runner/go.mod
+!infra/runner/*.go
