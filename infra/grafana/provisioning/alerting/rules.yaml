@@ -130,3 +130,167 @@ groups:
               type: threshold
               expression: B
               conditions: [{ evaluator: { type: lt, params: [1] } }]
+
+  # Production health: SLO burn, the public site, TLS, disk and memory.
+  # The SLO rules read server:probe_success:ratio_1m from infra/prometheus/recording.yaml.
+  - orgId: 1
+    name: platform
+    folder: Infrastructure
+    interval: 1m
+    rules:
+      - uid: slo-fast-burn
+        title: Error budget burning fast
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "{{ $labels.server }} is spending its 30-day error budget {{ if $values.B.Value }}{{ humanize $values.B.Value }}x{{ else }}over 14.4x{{ end }} faster than sustainable"
+          description: Over both the last hour and the last 5 minutes, health checks failed often enough to spend 2% of the 30-day budget per hour (the standard fast-burn page).
+        labels:
+          severity: critical
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                (1 - avg by (server) (avg_over_time(server:probe_success:ratio_1m[1h]))) / 0.001
+                and on (server)
+                (1 - avg by (server) (avg_over_time(probe_success{job="server-health"}[5m]))) / 0.001 > 14.4
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions: [{ evaluator: { type: gt, params: [14.4] } }]
+
+      - uid: public-site-down
+        title: Public site is down
+        condition: C
+        for: 2m
+        noDataState: Alerting
+        execErrState: Error
+        annotations:
+          summary: "https://o11y.raashed.com has not answered for 2 minutes"
+          description: The blackbox probe through nginx and TLS is failing. Check `systemctl status nginx` and the Grafana container.
+        labels:
+          severity: critical
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                probe_success{job="public-endpoint"}
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions: [{ evaluator: { type: lt, params: [1] } }]
+
+      - uid: tls-expiring
+        title: TLS certificate expiring
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "The o11y.raashed.com certificate expires in {{ if $values.B.Value }}{{ humanize $values.B.Value }}{{ else }}under 14{{ end }} days"
+          description: certbot normally renews 30 days ahead, so renewal is failing. Run `sudo certbot renew --dry-run` on the VPS.
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                (probe_ssl_earliest_cert_expiry{job="public-endpoint"} - time()) / 86400
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions: [{ evaluator: { type: lt, params: [14] } }]
+
+      - uid: disk-filling
+        title: Disk will fill within a day
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "At the current rate the host's disk fills within 24 hours"
+          description: Free space is falling fast enough to run out within a day. Check Prometheus retention and `docker system df`.
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                min(predict_linear(node_filesystem_avail_bytes{job="host",fstype=~"ext4|xfs|btrfs|zfs"}[6h], 86400))
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions: [{ evaluator: { type: lt, params: [0] } }]
+
+      - uid: container-oom
+        title: Container ran out of memory
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "{{ $labels.container_label_com_docker_compose_service }} had a process killed for running out of memory"
+          description: The kernel OOM-killed a process in this container in the last 5 minutes.
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                sum by (container_label_com_docker_compose_service) (increase(container_oom_events_total{container_label_com_docker_compose_service!=""}[5m]))
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions: [{ evaluator: { type: gt, params: [0] } }]

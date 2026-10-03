@@ -12,6 +12,9 @@ if [[ ! -f infra/.env ]]; then
 fi
 
 compose=(docker compose -f infra/compose.yaml)
+# compose.yaml passes it to the runner, which reports it as o11y_build_info
+GIT_COMMIT=$(git rev-parse --short HEAD)
+export GIT_COMMIT
 
 # Fail before touching anything if another program already holds a host port
 # the stack publishes; otherwise nginx can end up proxying to that program.
@@ -62,4 +65,4 @@ check() {
 check grafana http://127.0.0.1:3120/api/health
 check runner http://127.0.0.1:3121/run/
 
-echo "deployed $(git rev-parse --short HEAD)"
+echo "deployed $GIT_COMMIT"

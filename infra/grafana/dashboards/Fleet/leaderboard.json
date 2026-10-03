@@ -1,14 +1,15 @@
 {
-  "uid": "load-compare",
-  "title": "Run Comparison",
-  "description": "Every k6 run in the time range, side by side.",
+  "uid": "leaderboard",
+  "title": "Leaderboard",
+  "description": "The 13 servers ranked by throughput per CPU core and per MB of memory, plus tail latency at a fixed request rate.",
   "tags": [
+    "overview",
     "comparison",
     "load-testing"
   ],
   "editable": false,
   "graphTooltip": 1,
-  "refresh": "30s",
+  "refresh": "1m",
   "liveNow": false,
   "schemaVersion": 41,
   "version": 1,
@@ -42,65 +43,29 @@
         "refresh": 1
       },
       {
-        "name": "server",
-        "label": "Server",
+        "name": "rate",
+        "label": "Fixed rate (req/s)",
         "type": "query",
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(k6_vus, server)",
+        "definition": "label_values(k6_vus{script=\"load\"}, rate)",
         "query": {
-          "query": "label_values(k6_vus, server)",
-          "refId": "server-var"
+          "query": "label_values(k6_vus{script=\"load\"}, rate)",
+          "refId": "rate-var"
         },
         "refresh": 2,
-        "multi": true,
-        "includeAll": true,
+        "multi": false,
+        "includeAll": false,
         "allValue": ".*",
-        "sort": 2,
+        "sort": 3,
         "hide": 0,
         "regex": "",
         "options": [],
         "current": {
-          "selected": true,
-          "text": [
-            "All"
-          ],
-          "value": [
-            "$__all"
-          ]
-        }
-      },
-      {
-        "name": "testid",
-        "label": "Run",
-        "type": "query",
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
-        "definition": "label_values(k6_vus{server=~\"$server\"}, testid)",
-        "query": {
-          "query": "label_values(k6_vus{server=~\"$server\"}, testid)",
-          "refId": "testid-var"
-        },
-        "refresh": 2,
-        "multi": true,
-        "includeAll": true,
-        "allValue": ".*",
-        "sort": 2,
-        "hide": 0,
-        "regex": "",
-        "options": [],
-        "current": {
-          "selected": true,
-          "text": [
-            "All"
-          ],
-          "value": [
-            "$__all"
-          ]
+          "text": "500",
+          "value": "500"
         }
       }
     ]
@@ -243,8 +208,8 @@
     },
     {
       "type": "table",
-      "title": "Runs side by side",
-      "description": "One row per run. 'Typical' is the median of 1s windows; 'Worst' is the slowest window. Click a run for the live view or a server for its dashboard.",
+      "title": "Leaderboard",
+      "description": "Servers ranked by requests served per CPU core, over every load test in the time range. Req/s per MB divides peak throughput by peak working-set memory under load. The p99 column only counts `load` runs at the selected rate, so it is like for like.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -255,7 +220,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (testid, server, script) (max_over_time(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[$__range]))",
+          "expr": "max by (server, language, framework) (probe_success{job=\"server-health\"})",
           "legendFormat": "",
           "refId": "A",
           "range": false,
@@ -267,7 +232,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max_over_time((sum by (testid, server, script) (rate(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[5s])))[$__range:1s])",
+          "expr": "sum_over_time((sum by (server) (rate(k6_http_reqs_total{group!~\"::setup|::teardown\"}[1m])))[$__range:15s]) / sum_over_time((server:container_cpu:rate1m{server=~\"actix|axum|tokio|go|gin|fiber|fastapi|flask|django|bun|node|express|fastify\"} and on (server) (sum by (server) (rate(k6_http_reqs_total{group!~\"::setup|::teardown\"}[1m])) > 0))[$__range:15s])",
           "legendFormat": "",
           "refId": "B",
           "range": false,
@@ -279,7 +244,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum by (testid, server, script) (max_over_time(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\",expected_response=\"false\"}[$__range])) or sum by (testid, server, script) (max_over_time(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[$__range])) * 0) / sum by (testid, server, script) (max_over_time(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[$__range]))",
+          "expr": "max_over_time((sum by (server) (rate(k6_http_reqs_total{group!~\"::setup|::teardown\"}[5s])))[$__range:1s]) / (max_over_time((server:container_memory:working_set{server=~\"actix|axum|tokio|go|gin|fiber|fastapi|flask|django|bun|node|express|fastify\"} and on (server) (sum by (server) (rate(k6_http_reqs_total{group!~\"::setup|::teardown\"}[1m])) > 0))[$__range:15s]) / 1e6)",
           "legendFormat": "",
           "refId": "C",
           "range": false,
@@ -291,7 +256,19 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "quantile_over_time(0.5, (max by (testid, server, script) (k6_http_req_duration_p95{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}))[$__range:2s])",
+          "expr": "quantile_over_time(0.5, (max by (server) (k6_http_req_duration_p99{group!~\"::setup|::teardown\",script=\"load\",rate=\"$rate\"}))[$__range:2s])",
+          "legendFormat": "",
+          "refId": "D",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max_over_time((sum by (server) (rate(k6_http_reqs_total{group!~\"::setup|::teardown\"}[5s])))[$__range:1s])",
           "legendFormat": "",
           "refId": "E",
           "range": false,
@@ -303,33 +280,9 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "quantile_over_time(0.5, (max by (testid, server, script) (k6_http_req_duration_p99{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}))[$__range:2s])",
+          "expr": "max_over_time((server:container_memory:working_set{server=~\"actix|axum|tokio|go|gin|fiber|fastapi|flask|django|bun|node|express|fastify\"} and on (server) (sum by (server) (rate(k6_http_reqs_total{group!~\"::setup|::teardown\"}[1m])) > 0))[$__range:15s])",
           "legendFormat": "",
           "refId": "F",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "max by (testid, server, script) (max_over_time(k6_http_req_duration_p99{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[$__range]))",
-          "legendFormat": "",
-          "refId": "G",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "max by (testid, server, script) (max_over_time(k6_vus{testid=~\"$testid\",server=~\"$server\"}[$__range]))",
-          "legendFormat": "",
-          "refId": "H",
           "range": false,
           "instant": true,
           "format": "table"
@@ -341,15 +294,39 @@
           "options": {}
         },
         {
+          "id": "filterByValue",
+          "options": {
+            "type": "include",
+            "match": "any",
+            "filters": [
+              {
+                "fieldName": "Value #E",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true
+              "Time": true,
+              "Value #A": true
             },
             "indexByName": {
-              "testid": 0,
-              "server": 1,
-              "script": 2
+              "server": 0,
+              "language": 1,
+              "framework": 2,
+              "Value #B": 3,
+              "Value #C": 4,
+              "Value #D": 5,
+              "Value #E": 6,
+              "Value #F": 7
             }
           }
         },
@@ -388,27 +365,6 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "testid"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Run"
-              },
-              {
-                "id": "links",
-                "value": [
-                  {
-                    "title": "Open run in the live view",
-                    "url": "/d/load-live?var-testid=${__value.raw}&${__url_time_range}"
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "server"
             },
             "properties": [
@@ -430,28 +386,28 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "script"
+              "options": "language"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "Script"
+                "value": "Language"
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "Value #A"
+              "options": "framework"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "Requests"
+                "value": "Framework"
               },
               {
-                "id": "unit",
-                "value": "short"
+                "id": "custom.width",
+                "value": 230
               }
             ]
           },
@@ -463,11 +419,15 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Peak req/s"
+                "value": "Req/s per core"
               },
               {
                 "id": "unit",
                 "value": "reqps"
+              },
+              {
+                "id": "decimals",
+                "value": 0
               },
               {
                 "id": "custom.cellOptions",
@@ -484,10 +444,6 @@
                 }
               },
               {
-                "id": "decimals",
-                "value": 0
-              },
-              {
                 "id": "custom.width",
                 "value": 200
               }
@@ -501,17 +457,54 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Error rate"
+                "value": "Req/s per MB"
               },
               {
                 "id": "unit",
-                "value": "percentunit"
+                "value": "reqps"
+              },
+              {
+                "id": "decimals",
+                "value": 1
               },
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "basic"
+                  "type": "gauge",
+                  "mode": "gradient",
+                  "valueDisplayMode": "text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "continuous-BlPu"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #D"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "p99 at $rate req/s"
+              },
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
                 }
               },
               {
@@ -525,18 +518,14 @@
                     },
                     {
                       "color": "orange",
-                      "value": 0.01
+                      "value": 0.1
                     },
                     {
                       "color": "red",
-                      "value": 0.02
+                      "value": 0.5
                     }
                   ]
                 }
-              },
-              {
-                "id": "decimals",
-                "value": 2
               }
             ]
           },
@@ -548,37 +537,15 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Typical p95"
+                "value": "Peak req/s"
               },
               {
                 "id": "unit",
-                "value": "s"
+                "value": "reqps"
               },
               {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "orange",
-                      "value": 0.1
-                    },
-                    {
-                      "color": "red",
-                      "value": 0.5
-                    }
-                  ]
-                }
+                "id": "decimals",
+                "value": 0
               }
             ]
           },
@@ -590,95 +557,11 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Typical p99"
+                "value": "Peak memory under load"
               },
               {
                 "id": "unit",
-                "value": "s"
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "orange",
-                      "value": 0.1
-                    },
-                    {
-                      "color": "red",
-                      "value": 0.5
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Value #G"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Worst p99"
-              },
-              {
-                "id": "unit",
-                "value": "s"
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "orange",
-                      "value": 0.1
-                    },
-                    {
-                      "color": "red",
-                      "value": 0.5
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Value #H"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Peak VUs"
-              },
-              {
-                "id": "unit",
-                "value": "short"
+                "value": "bytes"
               }
             ]
           }
@@ -696,13 +579,13 @@
         "x": 0,
         "y": 3,
         "w": 24,
-        "h": 13
+        "h": 15
       }
     },
     {
       "type": "bargauge",
-      "title": "Peak throughput",
-      "description": "Highest sustained request rate per run.",
+      "title": "Req/s per CPU core",
+      "description": "Requests served per CPU-second while under load. Higher is better.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -713,8 +596,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sort_desc(max_over_time((sum by (testid) (rate(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[5s])))[$__range:1s]))",
-          "legendFormat": "{{testid}}",
+          "expr": "sort_desc(sum_over_time((sum by (server) (rate(k6_http_reqs_total{group!~\"::setup|::teardown\"}[1m])))[$__range:15s]) / sum_over_time((server:container_cpu:rate1m{server=~\"actix|axum|tokio|go|gin|fiber|fastapi|flask|django|bun|node|express|fastify\"} and on (server) (sum by (server) (rate(k6_http_reqs_total{group!~\"::setup|::teardown\"}[1m])) > 0))[$__range:15s]))",
+          "legendFormat": "{{server}}",
           "refId": "A",
           "range": false,
           "instant": true
@@ -757,15 +640,15 @@
       "id": 3,
       "gridPos": {
         "x": 0,
-        "y": 16,
-        "w": 12,
+        "y": 18,
+        "w": 8,
         "h": 12
       }
     },
     {
       "type": "bargauge",
-      "title": "Typical p99 latency",
-      "description": "Median over the run of each window's p99. Lower is better.",
+      "title": "Req/s per MB of memory",
+      "description": "Peak throughput divided by peak memory under load. Higher is better.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -776,8 +659,71 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sort(quantile_over_time(0.5, (max by (testid) (k6_http_req_duration_p99{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}))[$__range:2s]))",
-          "legendFormat": "{{testid}}",
+          "expr": "sort_desc(max_over_time((sum by (server) (rate(k6_http_reqs_total{group!~\"::setup|::teardown\"}[5s])))[$__range:1s]) / (max_over_time((server:container_memory:working_set{server=~\"actix|axum|tokio|go|gin|fiber|fastapi|flask|django|bun|node|express|fastify\"} and on (server) (sum by (server) (rate(k6_http_reqs_total{group!~\"::setup|::teardown\"}[1m])) > 0))[$__range:15s]) / 1e6))",
+          "legendFormat": "{{server}}",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "continuous-BlPu"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "sizing": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 8,
+        "y": 18,
+        "w": 8,
+        "h": 12
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "p99 at $rate req/s",
+      "description": "Median over `load` runs at the selected rate of each 1s window's p99. Lower is better.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sort(quantile_over_time(0.5, (max by (server) (k6_http_req_duration_p99{group!~\"::setup|::teardown\",script=\"load\",rate=\"$rate\"}))[$__range:2s]))",
+          "legendFormat": "{{server}}",
           "refId": "A",
           "range": false,
           "instant": true
@@ -825,11 +771,11 @@
           "values": false
         }
       },
-      "id": 4,
+      "id": 5,
       "gridPos": {
-        "x": 12,
-        "y": 16,
-        "w": 12,
+        "x": 16,
+        "y": 18,
+        "w": 8,
         "h": 12
       }
     }

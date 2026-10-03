@@ -3,7 +3,7 @@
   "title": "Express",
   "description": "Express (TypeScript, Express 5.2): health, container resources and load-test history.",
   "tags": [
-    "server",
+    "per-server",
     "typescript"
   ],
   "editable": false,
@@ -97,6 +97,38 @@
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "type": "dashboard"
+      },
+      {
+        "name": "Load tests",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(255, 152, 48, 0.5)",
+        "expr": "count by (server, testid) (count_over_time(k6_vus[$__interval]))",
+        "step": "5s",
+        "titleFormat": "Load test on {{server}}",
+        "textFormat": "{{testid}}",
+        "tagKeys": "server",
+        "useValueForTime": false
+      },
+      {
+        "name": "Deploys",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(115, 191, 105, 1)",
+        "expr": "max by (commit) (o11y_build_info) unless max by (commit) (o11y_build_info offset 2m)",
+        "step": "30s",
+        "titleFormat": "Deployed",
+        "textFormat": "commit {{commit}}",
+        "tagKeys": "commit",
+        "useValueForTime": false
       }
     ]
   },
@@ -123,7 +155,19 @@
       "title": "Servers",
       "type": "dashboards",
       "tags": [
-        "server"
+        "per-server"
+      ],
+      "asDropdown": true,
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "title": "Compare",
+      "type": "dashboards",
+      "tags": [
+        "comparison"
       ],
       "asDropdown": true,
       "keepTime": true,
@@ -144,10 +188,10 @@
       "icon": "external link"
     },
     {
-      "title": "Infrastructure",
+      "title": "Ops",
       "type": "dashboards",
       "tags": [
-        "infrastructure"
+        "ops"
       ],
       "asDropdown": true,
       "keepTime": true,
@@ -616,12 +660,484 @@
     {
       "type": "row",
       "id": 9,
-      "title": "Container resources",
+      "title": "Reliability \u00b7 objective: 99.9% of health checks pass over 30 days",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "x": 0,
         "y": 11,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "stat",
+      "title": "30-day availability",
+      "description": "Share of passing health checks over the last 30 days.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "avg_over_time(server:probe_success:ratio_1m{server=\"express\"}[30d])",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.99
+              },
+              {
+                "color": "green",
+                "value": 0.999
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 10,
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 5,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Error budget left",
+      "description": "Share of the 30-day error budget (0.1% of checks may fail) not yet spent. Below zero means the objective is missed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "1 - (1 - avg_over_time(server:probe_success:ratio_1m{server=\"express\"}[30d])) / 0.001",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 11,
+      "gridPos": {
+        "x": 5,
+        "y": 12,
+        "w": 5,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Burn rate (1h)",
+      "description": "How fast the budget is being spent over the last hour: 1x would use exactly the whole budget in 30 days. At 14.4x, a single hour spends 2% of it, which raises an alert.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(1 - avg_over_time(server:probe_success:ratio_1m{server=\"express\"}[1h])) / 0.001",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:\u00d7",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 12,
+      "gridPos": {
+        "x": 10,
+        "y": 12,
+        "w": 5,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Restarts",
+      "description": "Times the container restarted after exiting, within the time range.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(changes(container_start_time_seconds{container_label_com_docker_compose_service=\"express\"}[$__range])) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 13,
+      "gridPos": {
+        "x": 15,
+        "y": 12,
+        "w": 5,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "OOM kills",
+      "description": "Processes the kernel killed for running out of memory, within the time range.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(container_oom_events_total{container_label_com_docker_compose_service=\"express\"}[$__range])) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 14,
+      "gridPos": {
+        "x": 20,
+        "y": 12,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Error budget burn rate",
+      "description": "Budget spend relative to sustainable, over 1-hour and 6-hour windows. Dashed lines mark the 6x and 14.4x alerting levels.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(1 - avg_over_time(server:probe_success:ratio_1m{server=\"express\"}[1h])) / 0.001",
+          "legendFormat": "1h window",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(1 - avg_over_time(server:probe_success:ratio_1m{server=\"express\"}[6h])) / 0.001",
+          "legendFormat": "6h window",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:\u00d7",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": 15000,
+            "axisSoftMin": 0,
+            "gradientMode": "opacity",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            },
+            "axisSoftMax": 20
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "last"
+          ],
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "interval": "1m",
+      "id": 15,
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 7
+      }
+    },
+    {
+      "type": "row",
+      "id": 16,
+      "title": "Container resources",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 23,
         "w": 24,
         "h": 1
       }
@@ -691,10 +1207,10 @@
         }
       },
       "interval": "15s",
-      "id": 10,
+      "id": 17,
       "gridPos": {
         "x": 0,
-        "y": 12,
+        "y": 24,
         "w": 8,
         "h": 8
       }
@@ -775,10 +1291,10 @@
         }
       },
       "interval": "15s",
-      "id": 11,
+      "id": 18,
       "gridPos": {
         "x": 8,
-        "y": 12,
+        "y": 24,
         "w": 8,
         "h": 8
       }
@@ -858,10 +1374,10 @@
         }
       },
       "interval": "15s",
-      "id": 12,
+      "id": 19,
       "gridPos": {
         "x": 16,
-        "y": 12,
+        "y": 24,
         "w": 8,
         "h": 8
       }
@@ -954,10 +1470,10 @@
         }
       },
       "interval": "15s",
-      "id": 13,
+      "id": 20,
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 32,
         "w": 12,
         "h": 8
       }
@@ -1026,23 +1542,23 @@
         }
       },
       "interval": "15s",
-      "id": 14,
+      "id": 21,
       "gridPos": {
         "x": 12,
-        "y": 20,
+        "y": 32,
         "w": 12,
         "h": 8
       }
     },
     {
       "type": "row",
-      "id": 15,
+      "id": 22,
       "title": "Load tests",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 28,
+        "y": 40,
         "w": 24,
         "h": 1
       }
@@ -1103,10 +1619,10 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 16,
+      "id": 23,
       "gridPos": {
         "x": 0,
-        "y": 29,
+        "y": 41,
         "w": 6,
         "h": 4
       }
@@ -1168,10 +1684,10 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 17,
+      "id": 24,
       "gridPos": {
         "x": 6,
-        "y": 29,
+        "y": 41,
         "w": 6,
         "h": 4
       }
@@ -1241,10 +1757,10 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 18,
+      "id": 25,
       "gridPos": {
         "x": 12,
-        "y": 29,
+        "y": 41,
         "w": 6,
         "h": 4
       }
@@ -1313,10 +1829,10 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 19,
+      "id": 26,
       "gridPos": {
         "x": 18,
-        "y": 29,
+        "y": 41,
         "w": 6,
         "h": 4
       }
@@ -1426,10 +1942,10 @@
           "sort": "desc"
         }
       },
-      "id": 20,
+      "id": 27,
       "gridPos": {
         "x": 0,
-        "y": 33,
+        "y": 45,
         "w": 12,
         "h": 9
       }
@@ -1536,10 +2052,10 @@
           "sort": "desc"
         }
       },
-      "id": 21,
+      "id": 28,
       "gridPos": {
         "x": 12,
-        "y": 33,
+        "y": 45,
         "w": 12,
         "h": 9
       }
@@ -1609,10 +2125,10 @@
         }
       },
       "interval": "15s",
-      "id": 22,
+      "id": 29,
       "gridPos": {
         "x": 0,
-        "y": 42,
+        "y": 54,
         "w": 24,
         "h": 7
       }

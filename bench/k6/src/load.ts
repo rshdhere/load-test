@@ -26,6 +26,8 @@ export const options: Options = {
     },
   },
   summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
+  // Lets the Grafana leaderboard compare latency between runs at the same rate
+  tags: { rate: String(rate) },
 }
 
 export function setup(): Target {

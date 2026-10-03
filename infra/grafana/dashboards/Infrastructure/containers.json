@@ -3,7 +3,8 @@
   "title": "Containers",
   "description": "Every container in the stack, from cAdvisor.",
   "tags": [
-    "infrastructure"
+    "ops",
+    "resources"
   ],
   "editable": false,
   "graphTooltip": 1,
@@ -55,6 +56,38 @@
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "type": "dashboard"
+      },
+      {
+        "name": "Load tests",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(255, 152, 48, 0.5)",
+        "expr": "count by (server, testid) (count_over_time(k6_vus[$__interval]))",
+        "step": "5s",
+        "titleFormat": "Load test on {{server}}",
+        "textFormat": "{{testid}}",
+        "tagKeys": "server",
+        "useValueForTime": false
+      },
+      {
+        "name": "Deploys",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(115, 191, 105, 1)",
+        "expr": "max by (commit) (o11y_build_info) unless max by (commit) (o11y_build_info offset 2m)",
+        "step": "30s",
+        "titleFormat": "Deployed",
+        "textFormat": "commit {{commit}}",
+        "tagKeys": "commit",
+        "useValueForTime": false
       }
     ]
   },
@@ -81,7 +114,19 @@
       "title": "Servers",
       "type": "dashboards",
       "tags": [
-        "server"
+        "per-server"
+      ],
+      "asDropdown": true,
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "title": "Compare",
+      "type": "dashboards",
+      "tags": [
+        "comparison"
       ],
       "asDropdown": true,
       "keepTime": true,
@@ -102,10 +147,10 @@
       "icon": "external link"
     },
     {
-      "title": "Infrastructure",
+      "title": "Ops",
       "type": "dashboards",
       "tags": [
-        "infrastructure"
+        "ops"
       ],
       "asDropdown": true,
       "keepTime": true,
@@ -401,6 +446,132 @@
       "gridPos": {
         "x": 12,
         "y": 10,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Restarts",
+      "description": "Times each container restarted after exiting, within the time range.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sort_desc(sum by (server) (label_replace(changes(container_start_time_seconds{container_label_com_docker_compose_service!=\"\"}[$__range]), \"server\", \"$1\", \"container_label_com_docker_compose_service\", \"(.*)\")) > 0)",
+          "legendFormat": "{{server}}",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "sizing": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "OOM kills",
+      "description": "Processes killed for running out of memory, per container, within the time range.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sort_desc(sum by (server) (label_replace(increase(container_oom_events_total{container_label_com_docker_compose_service!=\"\"}[$__range]), \"server\", \"$1\", \"container_label_com_docker_compose_service\", \"(.*)\")) > 0)",
+          "legendFormat": "{{server}}",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "sizing": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "id": 6,
+      "gridPos": {
+        "x": 12,
+        "y": 19,
         "w": 12,
         "h": 9
       }

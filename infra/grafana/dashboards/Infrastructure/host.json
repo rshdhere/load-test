@@ -3,7 +3,8 @@
   "title": "Host",
   "description": "The machine running the containers: CPU, memory, network and disk.",
   "tags": [
-    "infrastructure"
+    "ops",
+    "resources"
   ],
   "editable": false,
   "graphTooltip": 1,
@@ -55,6 +56,38 @@
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "type": "dashboard"
+      },
+      {
+        "name": "Load tests",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(255, 152, 48, 0.5)",
+        "expr": "count by (server, testid) (count_over_time(k6_vus[$__interval]))",
+        "step": "5s",
+        "titleFormat": "Load test on {{server}}",
+        "textFormat": "{{testid}}",
+        "tagKeys": "server",
+        "useValueForTime": false
+      },
+      {
+        "name": "Deploys",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(115, 191, 105, 1)",
+        "expr": "max by (commit) (o11y_build_info) unless max by (commit) (o11y_build_info offset 2m)",
+        "step": "30s",
+        "titleFormat": "Deployed",
+        "textFormat": "commit {{commit}}",
+        "tagKeys": "commit",
+        "useValueForTime": false
       }
     ]
   },
@@ -81,7 +114,19 @@
       "title": "Servers",
       "type": "dashboards",
       "tags": [
-        "server"
+        "per-server"
+      ],
+      "asDropdown": true,
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "title": "Compare",
+      "type": "dashboards",
+      "tags": [
+        "comparison"
       ],
       "asDropdown": true,
       "keepTime": true,
@@ -102,10 +147,10 @@
       "icon": "external link"
     },
     {
-      "title": "Infrastructure",
+      "title": "Ops",
       "type": "dashboards",
       "tags": [
-        "infrastructure"
+        "ops"
       ],
       "asDropdown": true,
       "keepTime": true,
@@ -542,14 +587,297 @@
       }
     },
     {
-      "type": "row",
+      "type": "stat",
+      "title": "OOM kills",
+      "description": "Processes the kernel killed for running out of memory, within the time range.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "increase(node_vmstat_oom_kill{job=\"host\"}[$__range]) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
       "id": 8,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Dropped connections",
+      "description": "Connections the kernel refused because a listen backlog was full, within the time range. Usually a server overwhelmed by a load test.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "increase(node_netstat_TcpExt_ListenOverflows{job=\"host\"}[$__range]) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 9,
+      "gridPos": {
+        "x": 6,
+        "y": 5,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Disk free in 7 days",
+      "description": "Free space on the fullest filesystem a week from now, if it keeps filling at the rate of the last 6 hours.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "min(predict_linear(node_filesystem_avail_bytes{job=\"host\",fstype=~\"ext4|xfs|btrfs|zfs\"}[6h], 7 * 86400))",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2000000000.0
+              },
+              {
+                "color": "green",
+                "value": 10000000000.0
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 10,
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Memory pressure",
+      "description": "Share of the last minute in which some task was stalled waiting for memory (Linux PSI). Above zero means the host is short of memory.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(node_pressure_memory_waiting_seconds_total{job=\"host\"}[1m])",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.1
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 11,
+      "gridPos": {
+        "x": 18,
+        "y": 5,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "row",
+      "id": 12,
       "title": "CPU and memory",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 5,
+        "y": 9,
         "w": 24,
         "h": 1
       }
@@ -620,10 +948,10 @@
         }
       },
       "interval": "15s",
-      "id": 9,
+      "id": 13,
       "gridPos": {
         "x": 0,
-        "y": 6,
+        "y": 10,
         "w": 12,
         "h": 8
       }
@@ -694,10 +1022,10 @@
         }
       },
       "interval": "15s",
-      "id": 10,
+      "id": 14,
       "gridPos": {
         "x": 12,
-        "y": 6,
+        "y": 10,
         "w": 12,
         "h": 8
       }
@@ -829,10 +1157,10 @@
         }
       },
       "interval": "15s",
-      "id": 11,
+      "id": 15,
       "gridPos": {
         "x": 0,
-        "y": 14,
+        "y": 18,
         "w": 12,
         "h": 8
       }
@@ -964,23 +1292,119 @@
         }
       },
       "interval": "15s",
-      "id": 12,
+      "id": 16,
       "gridPos": {
         "x": 12,
-        "y": 14,
+        "y": 18,
         "w": 12,
         "h": 8
       }
     },
     {
+      "type": "timeseries",
+      "title": "Resource pressure",
+      "description": "Share of time some task was stalled waiting for CPU, memory or I/O (Linux PSI). Unlike usage, pressure shows when work is actually being delayed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(node_pressure_cpu_waiting_seconds_total{job=\"host\"}[$__rate_interval])",
+          "legendFormat": "cpu",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(node_pressure_memory_waiting_seconds_total{job=\"host\"}[$__rate_interval])",
+          "legendFormat": "memory",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(node_pressure_io_waiting_seconds_total{job=\"host\"}[$__rate_interval])",
+          "legendFormat": "io",
+          "refId": "C",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": 15000,
+            "axisSoftMin": 0,
+            "gradientMode": "opacity",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "axisSoftMax": 0.1
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "interval": "15s",
+      "id": 17,
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 24,
+        "h": 8
+      }
+    },
+    {
       "type": "row",
-      "id": 13,
+      "id": 18,
       "title": "Network and disk",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 22,
+        "y": 34,
         "w": 24,
         "h": 1
       }
@@ -1073,10 +1497,10 @@
         }
       },
       "interval": "15s",
-      "id": 14,
+      "id": 19,
       "gridPos": {
         "x": 0,
-        "y": 23,
+        "y": 35,
         "w": 8,
         "h": 8
       }
@@ -1156,10 +1580,10 @@
         }
       },
       "interval": "15s",
-      "id": 15,
+      "id": 20,
       "gridPos": {
         "x": 8,
-        "y": 23,
+        "y": 35,
         "w": 8,
         "h": 8
       }
@@ -1252,10 +1676,10 @@
         }
       },
       "interval": "15s",
-      "id": 16,
+      "id": 21,
       "gridPos": {
         "x": 16,
-        "y": 23,
+        "y": 35,
         "w": 8,
         "h": 8
       }

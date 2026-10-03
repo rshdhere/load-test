@@ -24,10 +24,20 @@ Runs all 13 servers in containers next to a self-hosted observability stack, and
 
 | Folder                        | Dashboards                                                                                      |
 | ----------------------------- | ----------------------------------------------------------------------------------------------- |
-| **Fleet**                     | **Fleet Overview** (home): every server's status, availability, CPU, memory and best results · **Run Comparison**: all load-test runs side by side |
+| **Fleet**                     | **Fleet Overview** (home): every server's status, availability, CPU, memory and best results · **Leaderboard**: servers ranked by req/s per CPU core and per MB of memory, plus p99 at a fixed rate · **Compare servers**: pick servers and see them side by side · **Run Comparison**: all load-test runs side by side |
 | **Servers** → Rust, Go, Python, TypeScript | One per server: what it is, health, container resources, and its load-test history |
-| **Load Testing**              | **Live Load Test** for watching a k6 run as it happens · the official k6 dashboard              |
-| **Infrastructure**            | **Host**, **Containers**, **Observability Stack** (scrape targets, TSDB, Grafana traffic, visitor tests) |
+| **Load Testing**              | **Live Load Test** for watching a k6 run as it happens · **k6 (official)**, the stock k6 dashboard |
+| **Infrastructure**            | **Host** (including PSI pressure, OOM kills and a disk forecast), **Containers** (including restarts and OOM kills), **Observability Stack** (deployed commit, public site and TLS expiry, alerts, scrape targets, TSDB, recording rules, visitor tests) |
+
+Tags cut across the folders: `overview`, `comparison`, `live`, `load-testing`, `per-server` (plus the language), `resources`, `ops` and `self-monitoring`. Every dashboard links back to Fleet Overview and has **Servers**, **Compare**, **Load testing** and **Ops** dropdowns built from those tags. The leaderboard's p99 column uses the `rate` tag that `load.ts` adds to every metric, so it only counts runs made after that tag was added.
+
+## Production signals
+
+- **SLO.** Every server has a 99.9% availability objective on its health check over a rolling 30 days. Fleet Overview shows how many servers meet it and each one's remaining error budget; each server dashboard shows its budget and 1h/6h burn rates. Load tests count against the budget on purpose: a server that misses health checks under load is unavailable to everyone else too.
+- **Markers.** Every graph marks when load tests ran (orange regions, from k6's own metrics) and when the stack was deployed (green, from `o11y_build_info`, which the runner reports from the `GIT_COMMIT` that `deploy.sh` sets).
+- **Alerts** (`grafana/provisioning/alerting/rules.yaml`): load-test errors and latency, servers down, a fast error-budget burn (14.4x over both 1h and 5m), the public site down, the TLS certificate within 14 days of expiry, the disk filling within a day, and container OOM kills. They show on Fleet Overview and the Observability Stack; add a contact point in Grafana to be notified.
+- **Recording rules** (`prometheus/recording.yaml`) pre-compute the per-minute health ratio and per-service CPU and memory, so the 30-day panels stay fast.
+- **External probe.** blackbox checks `https://o11y.raashed.com/api/health` through nginx and TLS every 30 seconds, which also reports the certificate's expiry.
 
 ## Visitor load tests
 
@@ -69,9 +79,10 @@ On Docker Desktop the host dashboards describe Docker's Linux VM rather than you
    ```sh
    sudo ufw default deny incoming
    sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full'
+   sudo ufw allow from 172.30.0.0/24 to 172.30.0.1 port 9100 proto tcp comment 'prometheus -> node-exporter'
    sudo ufw enable
    ```
-   Every container is published on `127.0.0.1` or not published at all, and node_exporter binds only to the internal Docker bridge, so nothing else is reachable from outside.
+   Every container is published on `127.0.0.1` or not published at all, and node_exporter binds only to the internal Docker bridge, so nothing else is reachable from outside. The third rule lets Prometheus, on that bridge, reach node_exporter; without it the Host dashboard stays empty and `up{job="host"}` is 0.
 3. **Install Docker Engine** with the Compose plugin ([docs](https://docs.docker.com/engine/install/)).
 4. **Clone and configure:**
    ```sh

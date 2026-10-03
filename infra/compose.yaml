@@ -181,6 +181,8 @@ services:
       RUNNER_DURATION: ${RUNNER_DURATION:-30s}
       RUNNER_COOLDOWN: ${RUNNER_COOLDOWN:-60s}
       RUNNER_PER_IP_HOURLY: ${RUNNER_PER_IP_HOURLY:-3}
+      # Set by infra/deploy.sh; shown on the dashboards as the deployed commit and as deploy markers
+      GIT_COMMIT: ${GIT_COMMIT:-dev}
     volumes:
       - ./servers.json:/etc/runner/servers.json:ro
       - runner-results:/results

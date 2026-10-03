@@ -2,6 +2,8 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+rule_files: [/etc/prometheus/recording.yaml]
+
 # k6 pushes load-test metrics via remote write; everything below is pulled.
 scrape_configs:
   # Health of every server, probed through blackbox_exporter. targets.json is
@@ -13,6 +15,23 @@ scrape_configs:
       module: [health]
     file_sd_configs:
       - files: [/etc/prometheus/targets.json]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # The public site as visitors reach it, through the host's nginx and TLS.
+  # Also reports when the certificate expires.
+  - job_name: public-endpoint
+    scrape_interval: 30s
+    metrics_path: /probe
+    params:
+      module: [public]
+    static_configs:
+      - targets: ["https://o11y.raashed.com/api/health"]
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

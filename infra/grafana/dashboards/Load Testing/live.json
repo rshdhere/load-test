@@ -3,6 +3,7 @@
   "title": "Live Load Test",
   "description": "Throughput, latency and errors for k6 runs as they stream in, next to the server's own container metrics.",
   "tags": [
+    "live",
     "load-testing"
   ],
   "editable": false,
@@ -117,6 +118,38 @@
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "type": "dashboard"
+      },
+      {
+        "name": "Load tests",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(255, 152, 48, 0.5)",
+        "expr": "count by (server, testid) (count_over_time(k6_vus[$__interval]))",
+        "step": "5s",
+        "titleFormat": "Load test on {{server}}",
+        "textFormat": "{{testid}}",
+        "tagKeys": "server",
+        "useValueForTime": false
+      },
+      {
+        "name": "Deploys",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(115, 191, 105, 1)",
+        "expr": "max by (commit) (o11y_build_info) unless max by (commit) (o11y_build_info offset 2m)",
+        "step": "30s",
+        "titleFormat": "Deployed",
+        "textFormat": "commit {{commit}}",
+        "tagKeys": "commit",
+        "useValueForTime": false
       }
     ]
   },
@@ -143,7 +176,19 @@
       "title": "Servers",
       "type": "dashboards",
       "tags": [
-        "server"
+        "per-server"
+      ],
+      "asDropdown": true,
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "title": "Compare",
+      "type": "dashboards",
+      "tags": [
+        "comparison"
       ],
       "asDropdown": true,
       "keepTime": true,
@@ -164,10 +209,10 @@
       "icon": "external link"
     },
     {
-      "title": "Infrastructure",
+      "title": "Ops",
       "type": "dashboards",
       "tags": [
-        "infrastructure"
+        "ops"
       ],
       "asDropdown": true,
       "keepTime": true,

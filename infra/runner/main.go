@@ -44,6 +44,7 @@ type config struct {
 	cooldown    time.Duration
 	perIPHourly int
 	remoteWrite string
+	commit      string // deployed git commit, for the dashboards' deploy markers
 }
 
 type runner struct {
@@ -69,6 +70,7 @@ func main() {
 		cooldown:    envDuration("RUNNER_COOLDOWN", 60*time.Second),
 		perIPHourly: envInt("RUNNER_PER_IP_HOURLY", 3),
 		remoteWrite: env("RUNNER_REMOTE_WRITE", "http://prometheus:9090/api/v1/write"),
+		commit:      env("GIT_COMMIT", "dev"),
 	}
 	if cfg.script != "load" && cfg.script != "break" {
 		log.Fatalf("RUNNER_SCRIPT must be load or break, got %q", cfg.script)
@@ -176,6 +178,10 @@ func (r *runner) metrics(w http.ResponseWriter, _ *http.Request) {
 	if r.current != nil {
 		busy, running = 1, r.current.Server
 	}
+	fmt.Fprintln(w, "# HELP o11y_build_info The git commit the stack was deployed from.")
+	fmt.Fprintln(w, "# TYPE o11y_build_info gauge")
+	fmt.Fprintf(w, "o11y_build_info{commit=%q} 1\n", r.cfg.commit)
+
 	fmt.Fprintln(w, "# HELP o11y_runner_busy Whether a visitor-started load test is running.")
 	fmt.Fprintln(w, "# TYPE o11y_runner_busy gauge")
 	fmt.Fprintf(w, "o11y_runner_busy{server=%q} %d\n", running, busy)

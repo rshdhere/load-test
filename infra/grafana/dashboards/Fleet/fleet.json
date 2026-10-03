@@ -3,7 +3,7 @@
   "title": "Fleet Overview",
   "description": "Health, resources and best load-test results for every server.",
   "tags": [
-    "fleet"
+    "overview"
   ],
   "editable": false,
   "graphTooltip": 1,
@@ -55,6 +55,38 @@
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "type": "dashboard"
+      },
+      {
+        "name": "Load tests",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(255, 152, 48, 0.5)",
+        "expr": "count by (server, testid) (count_over_time(k6_vus[$__interval]))",
+        "step": "5s",
+        "titleFormat": "Load test on {{server}}",
+        "textFormat": "{{testid}}",
+        "tagKeys": "server",
+        "useValueForTime": false
+      },
+      {
+        "name": "Deploys",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(115, 191, 105, 1)",
+        "expr": "max by (commit) (o11y_build_info) unless max by (commit) (o11y_build_info offset 2m)",
+        "step": "30s",
+        "titleFormat": "Deployed",
+        "textFormat": "commit {{commit}}",
+        "tagKeys": "commit",
+        "useValueForTime": false
       }
     ]
   },
@@ -81,7 +113,19 @@
       "title": "Servers",
       "type": "dashboards",
       "tags": [
-        "server"
+        "per-server"
+      ],
+      "asDropdown": true,
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "title": "Compare",
+      "type": "dashboards",
+      "tags": [
+        "comparison"
       ],
       "asDropdown": true,
       "keepTime": true,
@@ -102,10 +146,10 @@
       "icon": "external link"
     },
     {
-      "title": "Infrastructure",
+      "title": "Ops",
       "type": "dashboards",
       "tags": [
-        "infrastructure"
+        "ops"
       ],
       "asDropdown": true,
       "keepTime": true,
@@ -121,7 +165,7 @@
       "transparent": true,
       "options": {
         "mode": "markdown",
-        "content": "### Self-hosted observability for 13 HTTP servers\nEvery server below implements the same API ([OpenAPI spec](https://github.com/rshdhere/load-test/blob/main/servers/openapi.json)) in a different language and framework, runs in its own container, and is health-checked every 5 seconds. Load tests are driven by k6 and streamed into Prometheus. Source: [github.com/rshdhere/load-test](https://github.com/rshdhere/load-test).\n\n**[\u25b6 Run a load test](/run/)** against any server and watch it live. One test runs at a time.",
+        "content": "### Self-hosted observability for 13 HTTP servers\nEvery server below implements the same API ([OpenAPI spec](https://github.com/rshdhere/load-test/blob/main/servers/openapi.json)) in a different language and framework, runs in its own container, and is health-checked every 5 seconds. Load tests are driven by k6 and streamed into Prometheus. Source: [github.com/rshdhere/load-test](https://github.com/rshdhere/load-test).\n\n**[\u25b6 Run a load test](/run/)** against any server and watch it live. One test runs at a time. See who wins on the **[Leaderboard](/d/leaderboard)**, or put servers next to each other in **[Compare servers](/d/compare-servers)**.",
         "code": {
           "language": "plaintext"
         }
@@ -702,12 +746,273 @@
     {
       "type": "row",
       "id": 11,
-      "title": "Servers",
+      "title": "Reliability \u00b7 99.9% of health checks pass, over a rolling 30 days",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "x": 0,
         "y": 13,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Servers within objective",
+      "description": "Servers whose health checks passed at least 99.9% of the time over the last 30 days, out of 13.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(avg_over_time(server:probe_success:ratio_1m{}[30d]) >= 0.999) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 11
+              },
+              {
+                "color": "green",
+                "value": 13
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 12,
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 4,
+        "h": 9
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Least budget left",
+      "description": "The server closest to missing its objective, and the share of its error budget it has left. Load tests that make a server miss health checks spend its budget.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "bottomk(1, 1 - (1 - avg_over_time(server:probe_success:ratio_1m{}[30d])) / 0.001)",
+          "legendFormat": "{{server}}",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value_and_name",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 13,
+      "gridPos": {
+        "x": 4,
+        "y": 14,
+        "w": 4,
+        "h": 9
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Error budget left by server",
+      "description": "Share of each server's 30d error budget (0.1% of health checks) still unspent. Below zero means the objective is missed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sort(1 - (1 - avg_over_time(server:probe_success:ratio_1m{}[30d])) / 0.001)",
+          "legendFormat": "{{server}}",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "sizing": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "id": 14,
+      "gridPos": {
+        "x": 8,
+        "y": 14,
+        "w": 8,
+        "h": 9
+      }
+    },
+    {
+      "type": "alertlist",
+      "title": "Firing alerts",
+      "description": "Alerts firing or about to fire right now. Empty is good.",
+      "options": {
+        "viewMode": "list",
+        "groupMode": "default",
+        "groupBy": [],
+        "maxItems": 20,
+        "sortOrder": 1,
+        "dashboardAlerts": false,
+        "alertName": "",
+        "alertInstanceLabelFilter": "",
+        "showInstances": true,
+        "folder": null,
+        "stateFilter": {
+          "firing": true,
+          "pending": true,
+          "noData": false,
+          "normal": false,
+          "error": true
+        }
+      },
+      "id": 15,
+      "gridPos": {
+        "x": 16,
+        "y": 14,
+        "w": 8,
+        "h": 9
+      }
+    },
+    {
+      "type": "row",
+      "id": 16,
+      "title": "Servers",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 23,
         "w": 24,
         "h": 1
       }
@@ -801,6 +1106,18 @@
           "expr": "quantile_over_time(0.5, (max by (server) (k6_http_req_duration_p99{server!=\"\",group!~\"::setup|::teardown\"}))[$__range:2s])",
           "legendFormat": "",
           "refId": "G",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "1 - (1 - avg_over_time(server:probe_success:ratio_1m{}[30d])) / 0.001",
+          "legendFormat": "",
+          "refId": "H",
           "range": false,
           "instant": true,
           "format": "table"
@@ -1142,6 +1459,52 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #H"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Error budget left"
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0
+                    },
+                    {
+                      "color": "green",
+                      "value": 0.5
+                    }
+                  ]
+                }
+              }
+            ]
           }
         ]
       },
@@ -1152,10 +1515,10 @@
           "show": false
         }
       },
-      "id": 12,
+      "id": 17,
       "gridPos": {
         "x": 0,
-        "y": 14,
+        "y": 24,
         "w": 24,
         "h": 15
       }
@@ -1235,23 +1598,23 @@
           "mode": "single"
         }
       },
-      "id": 13,
+      "id": 18,
       "gridPos": {
         "x": 0,
-        "y": 29,
+        "y": 39,
         "w": 24,
         "h": 10
       }
     },
     {
       "type": "row",
-      "id": 14,
+      "id": 19,
       "title": "Resources and results by server",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 39,
+        "y": 49,
         "w": 24,
         "h": 1
       }
@@ -1311,10 +1674,10 @@
           "values": false
         }
       },
-      "id": 15,
+      "id": 20,
       "gridPos": {
         "x": 0,
-        "y": 40,
+        "y": 50,
         "w": 8,
         "h": 12
       }
@@ -1374,10 +1737,10 @@
           "values": false
         }
       },
-      "id": 16,
+      "id": 21,
       "gridPos": {
         "x": 8,
-        "y": 40,
+        "y": 50,
         "w": 8,
         "h": 12
       }
@@ -1437,12 +1800,216 @@
           "values": false
         }
       },
-      "id": 17,
+      "id": 22,
       "gridPos": {
         "x": 16,
-        "y": 40,
+        "y": 50,
         "w": 8,
         "h": 12
+      }
+    },
+    {
+      "type": "row",
+      "id": 23,
+      "title": "By language",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 62,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "piechart",
+      "title": "Memory by language",
+      "description": "Working-set memory of each language's servers combined, right now.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (language) (server:container_memory:working_set * on (server) group_left (language) max by (server, language) (probe_success{job=\"server-health\"}))",
+          "legendFormat": "{{language}}",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "pieType": "donut",
+        "displayLabels": [
+          "name"
+        ],
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "id": 24,
+      "gridPos": {
+        "x": 0,
+        "y": 63,
+        "w": 8,
+        "h": 10
+      }
+    },
+    {
+      "type": "piechart",
+      "title": "CPU by language",
+      "description": "CPU used by each language's servers combined, over the last minute.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (language) (server:container_cpu:rate1m * on (server) group_left (language) max by (server, language) (probe_success{job=\"server-health\"}))",
+          "legendFormat": "{{language}}",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "pieType": "donut",
+        "displayLabels": [
+          "name"
+        ],
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "id": 25,
+      "gridPos": {
+        "x": 8,
+        "y": 63,
+        "w": 8,
+        "h": 10
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Memory per server, by language",
+      "description": "Average idle footprint: a language's memory divided by its number of servers.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sort_desc(sum by (language) (server:container_memory:working_set * on (server) group_left (language) max by (server, language) (probe_success{job=\"server-health\"})) / count by (language) (probe_success{job=\"server-health\"}))",
+          "legendFormat": "{{language}}",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "continuous-BlPu"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "sizing": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "id": 26,
+      "gridPos": {
+        "x": 16,
+        "y": 63,
+        "w": 8,
+        "h": 10
       }
     }
   ]

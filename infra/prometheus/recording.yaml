@@ -1,0 +1,21 @@
+# Pre-computed series for the SLO panels and alerts, so 30-day windows read
+# one sample a minute instead of one every 5 seconds.
+groups:
+  - name: server-slo
+    interval: 1m
+    rules:
+      # Share of passing health checks per server over the last minute
+      - record: server:probe_success:ratio_1m
+        expr: avg by (server, language, framework) (avg_over_time(probe_success{job="server-health"}[1m]))
+
+  - name: server-resources
+    interval: 15s
+    rules:
+      - record: server:container_cpu:rate1m
+        expr: >-
+          sum by (server) (label_replace(rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service!=""}[1m]),
+          "server", "$1", "container_label_com_docker_compose_service", "(.*)"))
+      - record: server:container_memory:working_set
+        expr: >-
+          sum by (server) (label_replace(container_memory_working_set_bytes{container_label_com_docker_compose_service!=""},
+          "server", "$1", "container_label_com_docker_compose_service", "(.*)"))

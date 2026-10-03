@@ -82,6 +82,72 @@
       "tooltip": "Open docs in a new tab",
       "type": "link",
       "url": "https://k6.io/docs/results-output/real-time/prometheus-remote-write/"
+    },
+    {
+      "title": "Fleet",
+      "type": "link",
+      "url": "/d/fleet",
+      "icon": "apps",
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "All servers at a glance"
+    },
+    {
+      "title": "Run a load test",
+      "type": "link",
+      "url": "/run/",
+      "icon": "bolt",
+      "keepTime": false,
+      "targetBlank": false,
+      "tooltip": "Start a load test against one server (one at a time)"
+    },
+    {
+      "title": "Servers",
+      "type": "dashboards",
+      "tags": [
+        "per-server"
+      ],
+      "asDropdown": true,
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "title": "Compare",
+      "type": "dashboards",
+      "tags": [
+        "comparison"
+      ],
+      "asDropdown": true,
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "title": "Load testing",
+      "type": "dashboards",
+      "tags": [
+        "load-testing"
+      ],
+      "asDropdown": true,
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "title": "Ops",
+      "type": "dashboards",
+      "tags": [
+        "ops"
+      ],
+      "asDropdown": true,
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "external link"
     }
   ],
   "liveNow": false,
@@ -1977,8 +2043,8 @@
   "refresh": "",
   "schemaVersion": 39,
   "tags": [
-    "prometheus",
-    "k6"
+    "live",
+    "load-testing"
   ],
   "templating": {
     "list": [
@@ -2072,7 +2138,7 @@
   "timeRangeUpdatedDuringEditOrView": false,
   "timepicker": {},
   "timezone": "",
-  "title": "k6 Prometheus",
+  "title": "k6 (official)",
   "uid": "ccbb2351-2ae2-462f-ae0e-f2c893ad1028",
   "version": 3,
   "weekStart": ""
