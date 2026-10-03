@@ -34,7 +34,7 @@ for url in $candidates; do
 done
 
 testid="${TESTID:-$server-$script-$(date +%Y%m%d-%H%M%S)}"
-echo "grafana: server=$server testid=$testid (http://localhost:3001)"
+echo "grafana: server=$server testid=$testid (http://localhost:3120)"
 
 exec k6 run -o experimental-prometheus-rw \
   --tag "testid=$testid" \

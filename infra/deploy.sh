@@ -13,6 +13,36 @@ fi
 
 compose=(docker compose -f infra/compose.yaml)
 
+# Fail before touching anything if another program already holds a host port
+# the stack publishes; otherwise nginx can end up proxying to that program.
+taken=$(
+  "${compose[@]}" config --format json | python3 -c '
+import json, subprocess, sys
+
+compose = sys.argv[1:]
+config = json.load(sys.stdin)
+
+# Ports this stack already publishes (from an earlier deploy) are fine
+out = subprocess.run(compose + ["ps", "--format", "json"], capture_output=True, text=True).stdout.strip()
+rows = json.loads(out) if out.startswith("[") else [json.loads(line) for line in out.splitlines() if line]
+ours = {p["PublishedPort"] for row in rows for p in row.get("Publishers") or [] if p.get("PublishedPort")}
+
+listening = subprocess.run(["ss", "-Hltn"], capture_output=True, text=True).stdout
+used = {int(line.split()[3].rsplit(":", 1)[1]) for line in listening.splitlines()}
+
+for name, service in config["services"].items():
+    for port in service.get("ports") or []:
+        published = int(port["published"])
+        if published in used and published not in ours:
+            print(f"  {name}: {published}")
+' "${compose[@]}"
+)
+if [[ -n "$taken" ]]; then
+  printf 'host ports already in use by something outside this stack:\n%s\n' "$taken" >&2
+  echo "free them or change the published ports in infra/compose.yaml (and infra/nginx/o11y.conf)" >&2
+  exit 1
+fi
+
 "${compose[@]}" build --pull
 "${compose[@]}" up -d --remove-orphans --wait --wait-timeout 300
 docker image prune -f >/dev/null
@@ -29,7 +59,7 @@ check() {
   return 1
 }
 
-check grafana http://127.0.0.1:3001/api/health
-check runner http://127.0.0.1:3002/run/
+check grafana http://127.0.0.1:3120/api/health
+check runner http://127.0.0.1:3121/run/
 
 echo "deployed $(git rev-parse --short HEAD)"

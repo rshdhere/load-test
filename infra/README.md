@@ -58,7 +58,7 @@ cp infra/.env.example infra/.env      # set GRAFANA_ADMIN_PASSWORD; drop the pub
 docker compose -f infra/compose.yaml up -d --build
 ```
 
-The first build compiles three Rust servers and takes a few minutes. Then open Grafana at <http://localhost:3001>, or load-test from a shell in `bench/k6` with `SERVER=<name> npm run load:grafana`. The runner is at <http://localhost:3002/run/>. Grafana and the runner only share one origin behind nginx, so locally the **Run a load test** buttons and the runner's links back to Grafana don't work; point a local nginx at `nginx/o11y.conf` (with `server_name localhost`) if you need them.
+The first build compiles three Rust servers and takes a few minutes. Then open Grafana at <http://localhost:3120>, or load-test from a shell in `bench/k6` with `SERVER=<name> npm run load:grafana`. The runner is at <http://localhost:3121/run/>. Grafana and the runner only share one origin behind nginx, so locally the **Run a load test** buttons and the runner's links back to Grafana don't work; point a local nginx at `nginx/o11y.conf` (with `server_name localhost`) if you need them.
 
 On Docker Desktop the host dashboards describe Docker's Linux VM rather than your machine, since that is where the containers run. On a VPS they describe the VPS itself.
 
@@ -83,10 +83,9 @@ On Docker Desktop the host dashboards describe Docker's Linux VM rather than you
    ```sh
    docker compose -f infra/compose.yaml up -d --build
    ```
-6. **Point nginx at it** and get a certificate (Grafana on `127.0.0.1:3001`, the runner on `127.0.0.1:3002`):
+6. **Point nginx at it** and get a certificate (Grafana on `127.0.0.1:3120`, the runner on `127.0.0.1:3121`). If your `nginx.conf` only includes `conf.d/*.conf` and not `sites-enabled`, use `conf.d` as below:
    ```sh
-   sudo cp infra/nginx/o11y.conf /etc/nginx/sites-available/o11y.conf
-   sudo ln -s /etc/nginx/sites-available/o11y.conf /etc/nginx/sites-enabled/
+   sudo cp infra/nginx/o11y.conf /etc/nginx/conf.d/o11y.conf
    sudo nginx -t && sudo systemctl reload nginx
    sudo certbot --nginx -d o11y.raashed.com
    ```
@@ -106,7 +105,7 @@ git pull
 infra/deploy.sh
 ```
 
-`deploy.sh` rebuilds, restarts the stack with `--remove-orphans`, and fails unless Grafana and the runner answer on `127.0.0.1`. It never touches the nginx site, because certbot edits the installed copy; after changing `nginx/o11y.conf`, apply the change to `/etc/nginx/sites-available/o11y.conf` yourself.
+`deploy.sh` rebuilds, restarts the stack with `--remove-orphans`, and fails unless Grafana and the runner answer on `127.0.0.1`. It never touches the nginx site, because certbot edits the installed copy; after changing `nginx/o11y.conf`, apply the change to `/etc/nginx/conf.d/o11y.conf` yourself. It also refuses to start if another program already holds one of the stack's host ports.
 
 ### CI/CD
 
@@ -136,7 +135,7 @@ Anonymous visitors can view every dashboard and start rate-limited load tests, b
 | ------------------------- | ------------------------ | ---------------------------------------------------------------- |
 | `GRAFANA_ADMIN_USER`      | `admin`                  | Grafana admin login                                              |
 | `GRAFANA_ADMIN_PASSWORD`  | (required)               | Grafana admin password; compose refuses to start without it      |
-| `O11Y_URL`                | `http://localhost:3001`  | Grafana's public URL, used in links; `https://o11y.raashed.com` on the VPS |
+| `O11Y_URL`                | `http://localhost:3120`  | Grafana's public URL, used in links; `https://o11y.raashed.com` on the VPS |
 | `GRAFANA_COOKIE_SECURE`   | `false`                  | Set `true` behind HTTPS                                          |
 | `WORKERS`                 | `2`                      | Workers/threads for every server (Rust, Go, Python), so they compete on equal terms |
 | `RUNNER_SCRIPT`           | `load`                   | Visitor test: `load` (constant rate) or `break` (ramp to 1000 VUs, 60s) |
