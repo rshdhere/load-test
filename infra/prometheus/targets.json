@@ -1,0 +1,132 @@
+[
+  {
+    "targets": [
+      "http://actix:3000/api/v1/health"
+    ],
+    "labels": {
+      "server": "actix",
+      "language": "Rust",
+      "framework": "actix-web 4.15"
+    }
+  },
+  {
+    "targets": [
+      "http://axum:3000/api/v1/health"
+    ],
+    "labels": {
+      "server": "axum",
+      "language": "Rust",
+      "framework": "axum 0.8 on hyper 1.11"
+    }
+  },
+  {
+    "targets": [
+      "http://tokio:3000/api/v1/health"
+    ],
+    "labels": {
+      "server": "tokio",
+      "language": "Rust",
+      "framework": "hyper 1.11 (no framework)"
+    }
+  },
+  {
+    "targets": [
+      "http://go:3000/api/v1/health"
+    ],
+    "labels": {
+      "server": "go",
+      "language": "Go",
+      "framework": "net/http (standard library)"
+    }
+  },
+  {
+    "targets": [
+      "http://gin:3000/api/v1/health"
+    ],
+    "labels": {
+      "server": "gin",
+      "language": "Go",
+      "framework": "gin 1.12"
+    }
+  },
+  {
+    "targets": [
+      "http://fiber:3000/api/v1/health"
+    ],
+    "labels": {
+      "server": "fiber",
+      "language": "Go",
+      "framework": "fiber 2.52 on fasthttp"
+    }
+  },
+  {
+    "targets": [
+      "http://fastapi:3000/api/v1/health"
+    ],
+    "labels": {
+      "server": "fastapi",
+      "language": "Python",
+      "framework": "FastAPI 0.142 on uvicorn 0.54"
+    }
+  },
+  {
+    "targets": [
+      "http://flask:3000/api/v1/health"
+    ],
+    "labels": {
+      "server": "flask",
+      "language": "Python",
+      "framework": "Flask 3.1 on gunicorn 26"
+    }
+  },
+  {
+    "targets": [
+      "http://django:3000/api/v1/health"
+    ],
+    "labels": {
+      "server": "django",
+      "language": "Python",
+      "framework": "Django 6.1 on gunicorn 26"
+    }
+  },
+  {
+    "targets": [
+      "http://bun:3000/api/v1/health"
+    ],
+    "labels": {
+      "server": "bun",
+      "language": "TypeScript",
+      "framework": "Bun.serve (built-in)"
+    }
+  },
+  {
+    "targets": [
+      "http://node:3000/api/v1/health"
+    ],
+    "labels": {
+      "server": "node",
+      "language": "TypeScript",
+      "framework": "node:http (built-in)"
+    }
+  },
+  {
+    "targets": [
+      "http://express:3000/api/v1/health"
+    ],
+    "labels": {
+      "server": "express",
+      "language": "TypeScript",
+      "framework": "Express 5.2"
+    }
+  },
+  {
+    "targets": [
+      "http://fastify:3000/api/v1/health"
+    ],
+    "labels": {
+      "server": "fastify",
+      "language": "TypeScript",
+      "framework": "Fastify 5.12"
+    }
+  }
+]
