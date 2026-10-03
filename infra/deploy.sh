@@ -50,6 +50,16 @@ fi
 "${compose[@]}" up -d --remove-orphans --wait --wait-timeout 300
 docker image prune -f >/dev/null
 
+# Config files are bind-mounted, so `up` does not restart anything when only
+# they change. Prometheus and blackbox reload on SIGHUP; Grafana re-reads
+# dashboards by itself but alert rules only through its admin API.
+hup_at=$(date +%s)
+"${compose[@]}" kill -s SIGHUP prometheus blackbox >/dev/null
+env_value() { sed -n "s/^$1=\([^[:space:]#]*\).*/\1/p" infra/.env | tail -1; }
+curl -fsS -o /dev/null -X POST -u "$(env_value GRAFANA_ADMIN_USER):$(env_value GRAFANA_ADMIN_PASSWORD)" \
+  http://127.0.0.1:3120/api/admin/provisioning/alerting/reload
+echo "reloaded: prometheus, blackbox, grafana alerting"
+
 check() {
   for _ in $(seq 30); do
     if curl -fsS -o /dev/null "$2"; then
@@ -64,5 +74,25 @@ check() {
 
 check grafana http://127.0.0.1:3120/api/health
 check runner http://127.0.0.1:3121/run/
+
+# SIGHUP reloads in the background; wait for a successful reload newer than the signal
+reloaded() {
+  curl -fsS http://127.0.0.1:9090/api/v1/status/runtimeinfo | python3 -c '
+import datetime, json, re, sys
+info = json.load(sys.stdin)["data"]
+at = datetime.datetime.fromisoformat(re.sub(r"\.\d+", "", info["lastConfigTime"]).replace("Z", "+00:00"))
+sys.exit(0 if info["reloadConfigSuccess"] and at.timestamp() >= int(sys.argv[1]) else 1)
+' "$hup_at"
+}
+for _ in $(seq 15); do
+  reloaded && break
+  sleep 2
+done
+if reloaded; then
+  echo "ok: prometheus config"
+else
+  echo "prometheus did not load its new config; see: docker compose -f infra/compose.yaml logs prometheus" >&2
+  exit 1
+fi
 
 echo "deployed $GIT_COMMIT"
