@@ -1,0 +1,9 @@
+**/node_modules
+**/target
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.env
+go/go-server
+gin/gin-server
+fiber/fiber-server
