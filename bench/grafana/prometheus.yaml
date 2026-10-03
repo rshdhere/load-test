@@ -1,3 +1,0 @@
-# k6 pushes its metrics here via remote write, so there is nothing to scrape yet
-global:
-  evaluation_interval: 15s

@@ -1,0 +1,55 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# k6 pushes load-test metrics via remote write; everything below is pulled.
+scrape_configs:
+  # Health of every server, probed through blackbox_exporter. targets.json is
+  # generated from infra/servers.json by infra/grafana/generate.py.
+  - job_name: server-health
+    scrape_interval: 5s
+    metrics_path: /probe
+    params:
+      module: [health]
+    file_sd_configs:
+      - files: [/etc/prometheus/targets.json]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  - job_name: containers
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  - job_name: host
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["172.30.0.1:9100"]
+        labels:
+          instance: o11y-host
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: grafana
+    static_configs:
+      - targets: ["grafana:3001"]
+
+  - job_name: blackbox
+    static_configs:
+      - targets: ["blackbox:9115"]
+
+  - job_name: runner
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["runner:8080"]
+
+  - job_name: caddy
+    static_configs:
+      - targets: ["caddy:2019"]
