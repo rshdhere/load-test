@@ -115,7 +115,7 @@ infra/deploy.sh
 - **images**: builds all 14 images (cached between runs)
 - **deploy** (`main` only, after both pass): SSHes into the VPS, resets the checkout to the tested commit, runs `infra/deploy.sh`, then checks <https://o11y.raashed.com> answers
 
-Deploy uses the `production` environment, so it can be gated with required reviewers in the repository settings. It is skipped until the variable `VPS_APP_DIR` is set, and needs these secrets:
+Deploy uses the `production` environment, so it can be gated with required reviewers in the repository settings. It fails with a clear error until these are set in that environment:
 
 | Name              | Kind     | Value                                                              |
 | ----------------- | -------- | ------------------------------------------------------------------ |

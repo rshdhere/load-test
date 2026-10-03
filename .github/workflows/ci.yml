@@ -17,9 +17,9 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - name: Dashboards and probe targets match servers.json
@@ -28,7 +28,7 @@ jobs:
           git diff --exit-code -- infra/grafana/dashboards infra/prometheus/targets.json \
             || { echo "::error::Run 'python3 infra/grafana/generate.py' and commit the result"; exit 1; }
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: infra/runner/go.mod
           cache: false
@@ -38,7 +38,7 @@ jobs:
           go vet ./...
           go build ./...
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -89,9 +89,9 @@ jobs:
           - { name: runner, context: ., file: infra/runner/Dockerfile }
     name: image (${{ matrix.name }})
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
@@ -101,10 +101,11 @@ jobs:
 
   # Pulls the tested commit on the VPS and runs infra/deploy.sh there.
   # Needs secrets VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS and
-  # variable VPS_APP_DIR (the checkout's absolute path); skipped until VPS_APP_DIR is set.
+  # variable VPS_APP_DIR (the checkout's absolute path) in the production environment.
+  # Environment variables are not visible to a job-level `if`, so the check is in the step.
   deploy:
     needs: [checks, images]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.VPS_APP_DIR != ''
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -129,6 +130,10 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           APP_DIR: ${{ vars.VPS_APP_DIR }}
         run: |
+          if [[ -z "$APP_DIR" || -z "$VPS_HOST" ]]; then
+            echo "::error::Set VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS and VPS_APP_DIR in the production environment"
+            exit 1
+          fi
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             "$VPS_USER@$VPS_HOST" \
             "set -e; cd '$APP_DIR' && git fetch --quiet origin main && git reset --hard '${{ github.sha }}' && infra/deploy.sh"
