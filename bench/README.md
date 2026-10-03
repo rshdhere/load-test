@@ -73,7 +73,7 @@ SERVER=django RATE=500 npm run load:grafana
 SERVER=fiber TESTID=fiber-gc-tuned npm run break:grafana
 ```
 
-`grafana.sh` looks the port up in `infra/servers.json`, reads the server's name from its health endpoint, and tags every metric with `server`, `script` and `testid` (default `<server>-<script>-<timestamp>`). `URL`, `HOST` and `PORTS` still work for servers started by hand. Watch the run in **Load Testing → Live Load Test** at <http://localhost:8080>; afterwards it appears on the server's own dashboard and in **Fleet → Run Comparison**.
+`grafana.sh` looks the port up in `infra/servers.json`, reads the server's name from its health endpoint, and tags every metric with `server`, `script` and `testid` (default `<server>-<script>-<timestamp>`). `URL`, `HOST` and `PORTS` still work for servers started by hand. Watch the run in **Load Testing → Live Load Test** at <http://localhost:3001>; afterwards it appears on the server's own dashboard and in **Fleet → Run Comparison**.
 
 ## Fair comparisons
 

@@ -49,7 +49,3 @@ scrape_configs:
     scrape_interval: 5s
     static_configs:
       - targets: ["runner:8080"]
-
-  - job_name: caddy
-    static_configs:
-      - targets: ["caddy:2019"]

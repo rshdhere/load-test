@@ -673,8 +673,7 @@ def containers():
 def stack():
     L = Layout()
     L.add({"type": "table", "title": "Scrape targets",
-           "description": "Every target Prometheus scrapes and whether the last scrape worked. Caddy is only up "
-                          "with the public profile.",
+           "description": "Every target Prometheus scrapes and whether the last scrape worked.",
            "datasource": DS, "targets": [t("up", ref="A", instant=True, table=True)],
            "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": True, "__name__": True},
                                                               "renameByName": {"Value": "Up"}}}],
@@ -699,11 +698,7 @@ def stack():
              "bytes", interval="1m"), 8, 8)
     L.add(ts("Grafana requests", "Requests served by Grafana per second, by status code.",
              t('sum by (status_code) (rate(grafana_http_request_duration_seconds_count[$__rate_interval]))',
-               "{{status_code}}"), "reqps", stack=True, fill=40, interval="1m"), 12, 8)
-    L.add(ts("Public traffic (Caddy)", "Requests per second through the public HTTPS entrypoint, by status code. "
-                                       "Includes local traffic on :8080.",
-             t('sum by (code) (rate(caddy_http_requests_total[$__rate_interval]))', "{{code}}"), "reqps",
-             stack=True, fill=40, interval="1m"), 12, 8)
+               "{{status_code}}"), "reqps", stack=True, fill=40, interval="1m"), 24, 8)
     L.add(ts("Visitor load tests", "Load tests started from the public /run/ page, by server and result.",
              t('sum by (server, result) (increase(o11y_runner_runs_total[$__rate_interval]))',
                "{{server}} {{result}}"), draw="bars", fill=60, interval="1m"), 12, 8)
@@ -712,7 +707,7 @@ def stack():
              t('sum by (reason) (increase(o11y_runner_rejections_total[$__rate_interval]))', "{{reason}}"),
              draw="bars", fill=60, stack=True, interval="1m"), 12, 8)
     return dashboard("infra-stack", "Observability Stack",
-                     "Health of Prometheus, Grafana, the exporters and the public entrypoint.",
+                     "Health of Prometheus, Grafana, the exporters and the load-test runner.",
                      L, [v_datasource()], ["infrastructure"], refresh="30s", time_from="now-6h")
 
 

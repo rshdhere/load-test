@@ -325,7 +325,7 @@ func sameOrigin(req *http.Request) bool {
 }
 
 // clientIP trusts X-Forwarded-For because the runner is only reachable
-// through Caddy, which sets it from the real connection.
+// through the host's nginx, which overwrites it with the real client address.
 func clientIP(req *http.Request) string {
 	if xff := req.Header.Get("X-Forwarded-For"); xff != "" {
 		first, _, _ := strings.Cut(xff, ",")

@@ -3,8 +3,8 @@
 Runs all 13 servers in containers next to a self-hosted observability stack, and publishes Grafana at **<https://o11y.raashed.com>**.
 
 ```
- visitor ── :443 ── Caddy ──┬── /       Grafana ──── Prometheus ──┬── blackbox ──── 13 servers
-                            └── /run/   runner ── k6 ──┘  ▲        ├── cAdvisor   (containers)
+ visitor ── :443 ── nginx ──┬── /       Grafana ──── Prometheus ──┬── blackbox ──── 13 servers
+                   (host)   └── /run/   runner ── k6 ──┘  ▲        ├── cAdvisor   (containers)
                                          │                │        └── node_exporter (host)
                                          └── one test ────┘ remote write
 ```
@@ -18,7 +18,7 @@ Runs all 13 servers in containers next to a self-hosted observability stack, and
 | node_exporter                  | Host CPU, memory, disk, network and TCP state                                              |
 | Grafana                        | Dashboards and alert rules, all provisioned from files in this folder                      |
 | runner                         | The **Run a load test** button: starts one k6 run at a time against one server             |
-| Caddy                          | Single entrypoint: Grafana at `/`, the runner at `/run/`; automatic HTTPS on the VPS        |
+| nginx (on the host)            | Single entrypoint: Grafana at `/`, the runner at `/run/`; HTTPS via certbot. Not part of compose; site config in `nginx/o11y.conf` |
 
 ## Dashboards
 
@@ -27,7 +27,7 @@ Runs all 13 servers in containers next to a self-hosted observability stack, and
 | **Fleet**                     | **Fleet Overview** (home): every server's status, availability, CPU, memory and best results · **Run Comparison**: all load-test runs side by side |
 | **Servers** → Rust, Go, Python, TypeScript | One per server: what it is, health, container resources, and its load-test history |
 | **Load Testing**              | **Live Load Test** for watching a k6 run as it happens · the official k6 dashboard              |
-| **Infrastructure**            | **Host**, **Containers**, **Observability Stack** (scrape targets, TSDB, Grafana and Caddy traffic) |
+| **Infrastructure**            | **Host**, **Containers**, **Observability Stack** (scrape targets, TSDB, Grafana traffic, visitor tests) |
 
 ## Visitor load tests
 
@@ -35,11 +35,11 @@ Every server dashboard and the fleet overview link to **Run a load test** (`/run
 
 - **One test at a time** across the whole site; other servers' pages show the running test with a link to watch it.
 - **Cooldown** after each test (`RUNNER_COOLDOWN`, default 60s).
-- **Per-visitor limit** (`RUNNER_PER_IP_HOURLY`, default 3 per hour), keyed on the client IP Caddy sees.
+- **Per-visitor limit** (`RUNNER_PER_IP_HOURLY`, default 3 per hour), keyed on the client IP nginx sees.
 - **Fixed test settings** from `.env` (`RUNNER_SCRIPT`, `RUNNER_RATE`, `RUNNER_DURATION`); visitors only choose the server, from `servers.json`.
 - **Same-site form posts only**, so other websites cannot start tests (CSRF).
 
-The runner's metrics (`o11y_runner_*`) show whether a test is running on the Fleet Overview, and runs and turned-away requests by reason on **Infrastructure → Observability Stack**. The runner and Caddy do not expose `/metrics` publicly.
+The runner's metrics (`o11y_runner_*`) show whether a test is running on the Fleet Overview, and runs and turned-away requests by reason on **Infrastructure → Observability Stack**. nginx returns 404 for `/metrics`, so neither the runner's nor Grafana's metrics are public.
 
 Alert rules (**Alerting → Alert rules → Fleet**): server down for 1 minute, load-test error rate above 2%, p99 above 500 ms, and accept-queue overflows. Add a contact point to get notified.
 
@@ -58,7 +58,7 @@ cp infra/.env.example infra/.env      # set GRAFANA_ADMIN_PASSWORD; drop the pub
 docker compose -f infra/compose.yaml up -d --build
 ```
 
-The first build compiles three Rust servers and takes a few minutes. Then open <http://localhost:8080> (Grafana plus the runner, as on the VPS) and press **Run a load test**, or load-test from a shell in `bench/k6` with `SERVER=<name> npm run load:grafana`. Grafana alone is also on <http://localhost:3001>, where the run buttons don't work.
+The first build compiles three Rust servers and takes a few minutes. Then open Grafana at <http://localhost:3001>, or load-test from a shell in `bench/k6` with `SERVER=<name> npm run load:grafana`. The runner is at <http://localhost:3002/run/>. Grafana and the runner only share one origin behind nginx, so locally the **Run a load test** buttons and the runner's links back to Grafana don't work; point a local nginx at `nginx/o11y.conf` (with `server_name localhost`) if you need them.
 
 On Docker Desktop the host dashboards describe Docker's Linux VM rather than your machine, since that is where the containers run. On a VPS they describe the VPS itself.
 
@@ -68,10 +68,10 @@ On Docker Desktop the host dashboards describe Docker's Linux VM rather than you
 2. **Firewall:** allow only SSH, HTTP and HTTPS, for example with ufw:
    ```sh
    sudo ufw default deny incoming
-   sudo ufw allow OpenSSH && sudo ufw allow 80,443/tcp && sudo ufw allow 443/udp
+   sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full'
    sudo ufw enable
    ```
-   Everything except Caddy is published on `127.0.0.1` or not published at all, and node_exporter binds only to the internal Docker bridge, so nothing else is reachable from outside.
+   Every container is published on `127.0.0.1` or not published at all, and node_exporter binds only to the internal Docker bridge, so nothing else is reachable from outside.
 3. **Install Docker Engine** with the Compose plugin ([docs](https://docs.docker.com/engine/install/)).
 4. **Clone and configure:**
    ```sh
@@ -83,8 +83,15 @@ On Docker Desktop the host dashboards describe Docker's Linux VM rather than you
    ```sh
    docker compose -f infra/compose.yaml up -d --build
    ```
-   Caddy requests the certificate on first start; <https://o11y.raashed.com> is live once DNS has propagated.
-6. **Run load tests from the VPS** so results land in its Prometheus (install k6 and Node first):
+6. **Point nginx at it** and get a certificate (Grafana on `127.0.0.1:3001`, the runner on `127.0.0.1:3002`):
+   ```sh
+   sudo cp infra/nginx/o11y.conf /etc/nginx/sites-available/o11y.conf
+   sudo ln -s /etc/nginx/sites-available/o11y.conf /etc/nginx/sites-enabled/
+   sudo nginx -t && sudo systemctl reload nginx
+   sudo certbot --nginx -d o11y.raashed.com
+   ```
+   <https://o11y.raashed.com> is live once DNS has propagated.
+7. **Run load tests from the VPS** so results land in its Prometheus (install k6 and Node first):
    ```sh
    cd bench/k6 && npm ci
    SERVER=axum npm run break:grafana
@@ -107,10 +114,7 @@ Anonymous visitors can view every dashboard and start rate-limited load tests, b
 | ------------------------- | ------------------------ | ---------------------------------------------------------------- |
 | `GRAFANA_ADMIN_USER`      | `admin`                  | Grafana admin login                                              |
 | `GRAFANA_ADMIN_PASSWORD`  | (required)               | Grafana admin password; compose refuses to start without it      |
-| `O11Y_SITE`               | `http://localhost`       | What Caddy serves; `o11y.raashed.com` on the VPS turns on automatic HTTPS |
-| `O11Y_URL`                | `http://localhost:8080`  | Grafana's public URL, used in links; `https://o11y.raashed.com` on the VPS |
-| `CADDY_HTTP_PORT`         | `127.0.0.1:8080`         | Host port for Caddy's HTTP listener; `80` on the VPS             |
-| `CADDY_HTTPS_PORT`        | `127.0.0.1:8443`         | Host port for HTTPS (TCP and UDP); `443` on the VPS              |
+| `O11Y_URL`                | `http://localhost:3001`  | Grafana's public URL, used in links; `https://o11y.raashed.com` on the VPS |
 | `GRAFANA_COOKIE_SECURE`   | `false`                  | Set `true` behind HTTPS                                          |
 | `WORKERS`                 | `2`                      | Workers/threads for every server (Rust, Go, Python), so they compete on equal terms |
 | `RUNNER_SCRIPT`           | `load`                   | Visitor test: `load` (constant rate) or `break` (ramp to 1000 VUs, 60s) |

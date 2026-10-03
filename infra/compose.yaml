@@ -104,7 +104,7 @@ services:
         condition: service_healthy
     environment:
       GF_SERVER_HTTP_PORT: "3001"
-      GF_SERVER_ROOT_URL: ${O11Y_URL:-http://localhost:8080}
+      GF_SERVER_ROOT_URL: ${O11Y_URL:-http://localhost:3001}
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in infra/.env}
       GF_SECURITY_COOKIE_SECURE: ${GRAFANA_COOKIE_SECURE:-false}
@@ -171,7 +171,7 @@ services:
     networks: [o11y]
     restart: unless-stopped
 
-  # Lets visitors start one load test at a time; reachable only through Caddy at /run/
+  # Lets visitors start one load test at a time; the host's nginx proxies /run/ to it
   runner:
     build: { context: .., dockerfile: infra/runner/Dockerfile }
     image: o11y/runner:local
@@ -184,24 +184,7 @@ services:
     volumes:
       - ./servers.json:/etc/runner/servers.json:ro
       - runner-results:/results
-    networks: [o11y]
-    restart: unless-stopped
-
-  # Single entrypoint: Grafana at /, the runner at /run/. Serves http://localhost:8080
-  # locally; on the VPS set O11Y_SITE to the domain and the ports to 80/443 in .env.
-  caddy:
-    image: caddy:2.11-alpine
-    depends_on: [grafana, runner]
-    environment:
-      O11Y_SITE: ${O11Y_SITE:-http://localhost}
-    ports:
-      - "${CADDY_HTTP_PORT:-127.0.0.1:8080}:80"
-      - "${CADDY_HTTPS_PORT:-127.0.0.1:8443}:443"
-      - "${CADDY_HTTPS_PORT:-127.0.0.1:8443}:443/udp"
-    volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
+    ports: ["127.0.0.1:3002:8080"]
     networks: [o11y]
     restart: unless-stopped
 
@@ -215,6 +198,4 @@ networks:
 volumes:
   prometheus-data:
   grafana-data:
-  caddy-data:
-  caddy-config:
   runner-results:
