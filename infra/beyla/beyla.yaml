@@ -43,7 +43,7 @@ nodejs:
   enabled: false
 
 routes:
-  patterns: [/api/v1/health, /api/v1/docs, /api/v1/openapi.json]
+  patterns: ["/api/v1/health", "/api/v1/docs", "/api/v1/openapi.json", "/api/v1/todos", "/api/v1/todos/{id}"]
   unmatched: heuristic
 
 # RED metrics for every request, scraped by Prometheus. These servers answer in well
