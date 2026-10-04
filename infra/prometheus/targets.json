@@ -1,7 +1,7 @@
 [
   {
     "targets": [
-      "http://actix:3000/api/v1/health"
+      "http://actix:3101/api/v1/health"
     ],
     "labels": {
       "server": "actix",
@@ -11,7 +11,7 @@
   },
   {
     "targets": [
-      "http://axum:3000/api/v1/health"
+      "http://axum:3102/api/v1/health"
     ],
     "labels": {
       "server": "axum",
@@ -21,7 +21,7 @@
   },
   {
     "targets": [
-      "http://tokio:3000/api/v1/health"
+      "http://tokio:3103/api/v1/health"
     ],
     "labels": {
       "server": "tokio",
@@ -31,7 +31,7 @@
   },
   {
     "targets": [
-      "http://go:3000/api/v1/health"
+      "http://go:3104/api/v1/health"
     ],
     "labels": {
       "server": "go",
@@ -41,7 +41,7 @@
   },
   {
     "targets": [
-      "http://gin:3000/api/v1/health"
+      "http://gin:3105/api/v1/health"
     ],
     "labels": {
       "server": "gin",
@@ -51,7 +51,7 @@
   },
   {
     "targets": [
-      "http://fiber:3000/api/v1/health"
+      "http://fiber:3106/api/v1/health"
     ],
     "labels": {
       "server": "fiber",
@@ -61,7 +61,7 @@
   },
   {
     "targets": [
-      "http://fastapi:3000/api/v1/health"
+      "http://fastapi:3107/api/v1/health"
     ],
     "labels": {
       "server": "fastapi",
@@ -71,7 +71,7 @@
   },
   {
     "targets": [
-      "http://flask:3000/api/v1/health"
+      "http://flask:3108/api/v1/health"
     ],
     "labels": {
       "server": "flask",
@@ -81,7 +81,7 @@
   },
   {
     "targets": [
-      "http://django:3000/api/v1/health"
+      "http://django:3109/api/v1/health"
     ],
     "labels": {
       "server": "django",
@@ -91,7 +91,7 @@
   },
   {
     "targets": [
-      "http://bun:3000/api/v1/health"
+      "http://bun:3110/api/v1/health"
     ],
     "labels": {
       "server": "bun",
@@ -101,7 +101,7 @@
   },
   {
     "targets": [
-      "http://node:3000/api/v1/health"
+      "http://node:3111/api/v1/health"
     ],
     "labels": {
       "server": "node",
@@ -111,7 +111,7 @@
   },
   {
     "targets": [
-      "http://express:3000/api/v1/health"
+      "http://express:3112/api/v1/health"
     ],
     "labels": {
       "server": "express",
@@ -121,7 +121,7 @@
   },
   {
     "targets": [
-      "http://fastify:3000/api/v1/health"
+      "http://fastify:3113/api/v1/health"
     ],
     "labels": {
       "server": "fastify",

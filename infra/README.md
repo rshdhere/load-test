@@ -3,11 +3,17 @@
 Runs all 13 servers in containers next to a self-hosted observability stack, and publishes Grafana at **<https://o11y.raashed.com>**.
 
 ```
- visitor ── :443 ── nginx ──┬── /       Grafana ──── Prometheus ──┬── blackbox ──── 13 servers
-                   (host)   └── /run/   runner ── k6 ──┘  ▲        ├── cAdvisor   (containers)
-                                         │                │        └── node_exporter (host)
-                                         └── one test ────┘ remote write
+ visitor ── :443 ── nginx ──┬── /       Grafana ─┬── Prometheus ──┬── blackbox ──────── 13 servers
+                   (host)   │                    │    ▲  ▲        ├── cAdvisor            ▲
+                            │                    │    │  │        ├── node_exporter       │ eBPF
+                            │                    │    │  │        └── Beyla ──────────────┘
+                            │                    │    │  └ remote write ── k6 ◄── runner
+                            │                    ├── Loki ◄── Alloy ◄── container logs
+                            │                    └── Tempo ◄── Beyla (sampled traces), runner (spans)
+                            └── /run/   runner
 ```
+
+Metrics, logs and traces are linked in Grafana: a trace ID in a log line opens the trace, and a span opens its service's logs and request metrics.
 
 | Component                      | Role                                                                                       |
 | ------------------------------ | ------------------------------------------------------------------------------------------ |
@@ -16,8 +22,11 @@ Runs all 13 servers in containers next to a self-hosted observability stack, and
 | blackbox_exporter              | Probes every server's `/api/v1/health` every 5s (status, latency, availability)            |
 | cAdvisor                       | Per-container CPU, memory, threads and network                                             |
 | node_exporter                  | Host CPU, memory, disk, network and TCP state                                              |
+| Beyla                          | eBPF auto-instrumentation of the 13 servers, with no code changes in any language: request rate, errors and duration (RED) for every request, plus a 5% sample of requests as traces. `beyla/beyla.yaml` is generated from `servers.json` and matches the servers by port, so nothing else on the machine is instrumented |
+| Loki + Alloy                   | Logs: Alloy tails this project's containers (and only those) and ships them to Loki, 7 days kept |
+| Tempo                          | Traces from Beyla and the runner over OTLP, 3 days kept                                      |
 | Grafana                        | Dashboards and alert rules, all provisioned from files in this folder                      |
-| runner                         | The **Run a load test** button: starts one k6 run at a time against one server             |
+| runner                         | The **Run a load test** and **Head to head** buttons: starts one k6 run at a time. Traced with OpenTelemetry (a span per request and per load test) and logs JSON with trace IDs |
 | nginx (on the host)            | Single entrypoint: Grafana at `/`, the runner at `/run/`; HTTPS via certbot. Not part of compose; site config in `nginx/o11y.conf` |
 
 ## Dashboards
@@ -25,8 +34,9 @@ Runs all 13 servers in containers next to a self-hosted observability stack, and
 | Folder                        | Dashboards                                                                                      |
 | ----------------------------- | ----------------------------------------------------------------------------------------------- |
 | **Fleet**                     | **Fleet Overview** (home): every server's status, availability, CPU, memory and best results · **Leaderboard**: servers ranked by req/s per CPU core and per MB of memory, plus p99 at a fixed rate · **Compare servers**: pick servers and see them side by side · **Run Comparison**: all load-test runs side by side |
-| **Servers** → Rust, Go, Python, TypeScript | One per server: what it is, health, container resources, and its load-test history |
-| **Load Testing**              | **Live Load Test** for watching a k6 run as it happens · **k6 (official)**, the stock k6 dashboard |
+| **Servers** → Rust, Go, Python, TypeScript | One per server: what it is, health and SLO, container resources, its load-test history, requests seen from inside (eBPF: status codes, server-side vs k6 latency), and its logs and traces |
+| **Load Testing**              | **Live Load Test** for watching a k6 run as it happens · **Head to Head**: a 2-3 server race with winners, a scoreboard and overlaid graphs · **k6 (official)**, the stock k6 dashboard |
+| **Fleet → Inside the Servers** | What the servers saw, from eBPF: RED per server, slowest and latest traces, log volume and logs, with a service filter |
 | **Infrastructure**            | **Host** (including PSI pressure, OOM kills and a disk forecast), **Containers** (including restarts and OOM kills), **Observability Stack** (deployed commit, public site and TLS expiry, alerts, scrape targets, TSDB, recording rules, visitor tests) |
 
 Tags cut across the folders: `overview`, `comparison`, `live`, `load-testing`, `per-server` (plus the language), `resources`, `ops` and `self-monitoring`. Every dashboard links back to Fleet Overview and has **Servers**, **Compare**, **Load testing** and **Ops** dropdowns built from those tags. The leaderboard's p99 column uses the `rate` tag that `load.ts` adds to every metric, so it only counts runs made after that tag was added.
@@ -35,23 +45,29 @@ Tags cut across the folders: `overview`, `comparison`, `live`, `load-testing`, `
 
 - **SLO.** Every server has a 99.9% availability objective on its health check over a rolling 30 days. Fleet Overview shows how many servers meet it and each one's remaining error budget; each server dashboard shows its budget and 1h/6h burn rates. Load tests count against the budget on purpose: a server that misses health checks under load is unavailable to everyone else too.
 - **Markers.** Every graph marks when load tests ran (orange regions, from k6's own metrics) and when the stack was deployed (green, from `o11y_build_info`, which the runner reports from the `GIT_COMMIT` that `deploy.sh` sets).
-- **Alerts** (`grafana/provisioning/alerting/rules.yaml`): load-test errors and latency, servers down, a fast error-budget burn (14.4x over both 1h and 5m), the public site down, the TLS certificate within 14 days of expiry, the disk filling within a day, and container OOM kills. They show on Fleet Overview and the Observability Stack; add a contact point in Grafana to be notified.
+- **Alerts** (`grafana/provisioning/alerting/rules.yaml`): load-test errors and latency, servers down, a fast error-budget burn (14.4x over both 1h and 5m), the public site down, the TLS certificate within 14 days of expiry, the disk filling within a day, and container OOM kills. They show on Fleet Overview, the Observability Stack, each server's dashboard (its own alerts) and Head to Head (the racers' alerts). See **Alert notifications** below to get them in chat.
 - **Recording rules** (`prometheus/recording.yaml`) pre-compute the per-minute health ratio and per-service CPU and memory, so the 30-day panels stay fast.
 - **External probe.** blackbox checks `https://o11y.raashed.com/api/health` through nginx and TLS every 30 seconds, which also reports the certificate's expiry.
 
 ## Visitor load tests
 
-Every server dashboard and the fleet overview link to **Run a load test** (`/run/<server>`). A visitor picks a server, presses one button, and lands on the Live Load Test dashboard filtered to their run. Guard rails keep the VPS healthy:
+Every server dashboard and the fleet overview link to **Run a load test** (`/run/<server>`). A visitor picks a server, presses one button, and lands on the Live Load Test dashboard filtered to their run.
+
+**Head to head** (`/run/compare`) races 2 or 3 servers: `bench/k6/src/match.ts` sends each the same rate (`RUNNER_MATCH_RATE`, default `RUNNER_RATE`) at the same time, one k6 scenario per server, and the visitor lands on the **Head to Head** dashboard. Each server's requests are also tagged as their own run, so a race shows up on the racers' dashboards and in Run Comparison. Since the racers share the machine, a CPU-hungry server can slow the others; the pages say so.
+
+Guard rails keep the VPS healthy:
 
 - **One test at a time** across the whole site; other servers' pages show the running test with a link to watch it.
 - **Cooldown** after each test (`RUNNER_COOLDOWN`, default 60s).
 - **Per-visitor limit** (`RUNNER_PER_IP_HOURLY`, default 3 per hour), keyed on the client IP nginx sees.
-- **Fixed test settings** from `.env` (`RUNNER_SCRIPT`, `RUNNER_RATE`, `RUNNER_DURATION`); visitors only choose the server, from `servers.json`.
+- **Fixed test settings** from `.env` (`RUNNER_SCRIPT`, `RUNNER_RATE`, `RUNNER_MATCH_RATE`, `RUNNER_DURATION`); visitors only choose the servers, from `servers.json`. A race counts as one test.
 - **Same-site form posts only**, so other websites cannot start tests (CSRF).
 
 The runner's metrics (`o11y_runner_*`) show whether a test is running on the Fleet Overview, and runs and turned-away requests by reason on **Infrastructure → Observability Stack**. nginx returns 404 for `/metrics`, so neither the runner's nor Grafana's metrics are public.
 
-Alert rules (**Alerting → Alert rules → Fleet**): server down for 1 minute, load-test error rate above 2%, p99 above 500 ms, and accept-queue overflows. Add a contact point to get notified.
+### Alert notifications
+
+Set `ALERT_WEBHOOK_URL` (and `ALERT_WEBHOOK_TYPE`: `discord`, `slack`, `teams`, `googlechat` or `webhook`) in `infra/.env` and deploy. `deploy.sh` then provisions a contact point and notification policy (`grafana/provisioning/alerting/notifications.yaml`, git-ignored; the URL itself stays in the environment). Alerts are grouped by alert and server and repeat every 4 hours while firing. The three load-test alerts (labelled `kind=load-test`) are muted for notifications, since visitors trip them on purpose; they still show on the dashboards. Remove the URL and deploy again to stop notifications.
 
 The dashboards and `prometheus/targets.json` are generated from `servers.json`:
 
@@ -72,6 +88,8 @@ The first build compiles three Rust servers and takes a few minutes. Then open G
 
 On Docker Desktop the host dashboards describe Docker's Linux VM rather than your machine, since that is where the containers run. On a VPS they describe the VPS itself.
 
+Beyla needs a Linux kernel with BTF (5.8 or newer; check for `/sys/kernel/btf/vmlinux`) and runs privileged in the host's PID namespace to load its eBPF programs. It instruments only processes listening on the ports in `servers.json`: each server listens on that port inside its container too, so a server's address is the same everywhere (`http://fiber:3106` between containers, `http://localhost:3106` from the host). Without eBPF support Beyla exits and the "inside the server" panels stay empty; everything else works.
+
 ## Deploy to the VPS
 
 1. **DNS:** add an `A` record (and `AAAA` if the VPS has IPv6) for `o11y.raashed.com` pointing at the VPS.
@@ -83,6 +101,7 @@ On Docker Desktop the host dashboards describe Docker's Linux VM rather than you
    sudo ufw enable
    ```
    Every container is published on `127.0.0.1` or not published at all, and node_exporter binds only to the internal Docker bridge, so nothing else is reachable from outside. The third rule lets Prometheus, on that bridge, reach node_exporter; without it the Host dashboard stays empty and `up{job="host"}` is 0.
+   **Size:** the stack is meant for a small VPS (built against 2 cores and 4 GB). The logs and traces services have memory caps in `compose.yaml` (Loki 384 MB, Tempo 512 MB, Alloy 256 MB, Beyla 384 MB), Loki keeps 7 days and Tempo 3 days, and Beyla keeps 5% of requests as traces (`TRACE_SAMPLE` in `grafana/generate.py`) while its metrics count every request.
 3. **Install Docker Engine** with the Compose plugin ([docs](https://docs.docker.com/engine/install/)).
 4. **Clone and configure:**
    ```sh
@@ -116,13 +135,13 @@ git pull
 infra/deploy.sh
 ```
 
-`deploy.sh` rebuilds, restarts the stack with `--remove-orphans`, and fails unless Grafana and the runner answer on `127.0.0.1`. It never touches the nginx site, because certbot edits the installed copy; after changing `nginx/o11y.conf`, apply the change to `/etc/nginx/conf.d/o11y.conf` yourself. It also refuses to start if another program already holds one of the stack's host ports.
+`deploy.sh` rebuilds, restarts the stack with `--remove-orphans`, and fails unless Grafana and the runner answer on `127.0.0.1` and Grafana reaches Loki and Tempo. Config files are bind-mounted, so it also reloads what `up` would not: Prometheus, blackbox and Alloy on SIGHUP, Grafana's alert rules through its API, and it restarts Loki, Tempo or Beyla when their config file changed since they started. It never touches the nginx site, because certbot edits the installed copy; after changing `nginx/o11y.conf`, apply the change to `/etc/nginx/conf.d/o11y.conf` yourself. It also refuses to start if another program already holds one of the stack's host ports.
 
 ### CI/CD
 
 `.github/workflows/ci.yml` runs on every push and pull request:
 
-- **checks**: dashboards and `prometheus/targets.json` match `generate.py`, the compose file, Prometheus config and nginx site are valid, the runner vets and builds, the k6 scripts typecheck, and the shell scripts pass shellcheck
+- **checks**: dashboards, `prometheus/targets.json` and `beyla/beyla.yaml` match `generate.py`; the compose file, Prometheus, Loki, Alloy and Tempo configs and the nginx site are valid (each checked by its own binary); the runner is gofmt-clean, vets and builds; the k6 scripts typecheck; and the shell scripts pass shellcheck
 - **images**: builds all 14 images (cached between runs)
 - **deploy** (`main` only, after both pass): SSHes into the VPS, resets the checkout to the tested commit, runs `infra/deploy.sh`, then checks <https://o11y.raashed.com> answers
 
@@ -153,7 +172,10 @@ Anonymous visitors can view every dashboard and start rate-limited load tests, b
 | `RUNNER_RATE`             | `500`                    | Requests per second for the `load` script                        |
 | `RUNNER_DURATION`         | `30s`                    | Length of the `load` script                                      |
 | `RUNNER_COOLDOWN`         | `60s`                    | Pause after each visitor test before the next can start          |
+| `RUNNER_MATCH_RATE`       | `RUNNER_RATE`            | Requests per second to each server in a head-to-head race        |
 | `RUNNER_PER_IP_HOURLY`    | `3`                      | Visitor tests each client IP can start per hour                  |
+| `ALERT_WEBHOOK_URL`       | unset                    | Chat webhook for alert notifications; unset means none           |
+| `ALERT_WEBHOOK_TYPE`      | `discord`                | `discord`, `slack`, `teams`, `googlechat` or `webhook`           |
 | `PROMETHEUS_RETENTION`    | `30d`                    | How long Prometheus keeps data                                   |
 
 The internal network is fixed to `172.30.0.0/24` because node_exporter binds to its gateway (`172.30.0.1`). If that range is taken on the VPS, change it in `compose.yaml` and the `host` job in `prometheus/prometheus.yaml` together.

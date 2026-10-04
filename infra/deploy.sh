@@ -12,6 +12,7 @@ if [[ ! -f infra/.env ]]; then
 fi
 
 compose=(docker compose -f infra/compose.yaml)
+env_value() { sed -n "s/^$1=\([^[:space:]#]*\).*/\1/p" infra/.env | tail -1; }
 # compose.yaml passes it to the runner, which reports it as o11y_build_info
 GIT_COMMIT=$(git rev-parse --short HEAD)
 export GIT_COMMIT
@@ -46,34 +47,98 @@ if [[ -n "$taken" ]]; then
   exit 1
 fi
 
+# Alert notifications: provisioned only when infra/.env has a webhook URL, since
+# Grafana refuses a contact point without one. Without it, reset the policy so
+# a previously configured channel stops receiving.
+notify=infra/grafana/provisioning/alerting/notifications.yaml
+webhook_type=$(env_value ALERT_WEBHOOK_TYPE)
+webhook_type=${webhook_type:-discord}
+case $webhook_type in
+  discord | slack | teams | googlechat | webhook) ;;
+  *) echo "ALERT_WEBHOOK_TYPE must be discord, slack, teams, googlechat or webhook, got '$webhook_type'" >&2; exit 1 ;;
+esac
+if [[ -n "$(env_value ALERT_WEBHOOK_URL)" ]]; then
+  cat > "$notify" <<YAML
+# Written by infra/deploy.sh from infra/.env; do not edit.
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: o11y notifications
+    receivers:
+      - uid: o11y-notify
+        type: $webhook_type
+        settings:
+          url: \$__env{ALERT_WEBHOOK_URL}
+muteTimes:
+  - orgId: 1
+    name: always
+    time_intervals:
+      - weekdays: ["sunday:saturday"]
+policies:
+  - orgId: 1
+    receiver: o11y notifications
+    group_by: [grafana_folder, alertname, server]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    routes:
+      # Visitor load tests trip these on purpose; they stay on the dashboards
+      - receiver: o11y notifications
+        object_matchers: [["kind", "=", "load-test"]]
+        mute_time_intervals: [always]
+YAML
+  echo "alert notifications: $webhook_type"
+else
+  printf '%s\n' "# Written by infra/deploy.sh: no ALERT_WEBHOOK_URL, so no notifications." \
+    "apiVersion: 1" "resetPolicies: [1]" > "$notify"
+  echo "alert notifications: off (set ALERT_WEBHOOK_URL in infra/.env)"
+fi
+
 "${compose[@]}" build --pull
 "${compose[@]}" up -d --remove-orphans --wait --wait-timeout 300
 docker image prune -f >/dev/null
 
 # Config files are bind-mounted, so `up` does not restart anything when only
-# they change. Prometheus and blackbox reload on SIGHUP; Grafana re-reads
+# they change. Prometheus, blackbox and Alloy reload on SIGHUP; Grafana re-reads
 # dashboards by itself but alert rules only through its admin API.
+grafana_auth="$(env_value GRAFANA_ADMIN_USER):$(env_value GRAFANA_ADMIN_PASSWORD)"
 hup_at=$(date +%s)
-"${compose[@]}" kill -s SIGHUP prometheus blackbox >/dev/null
-env_value() { sed -n "s/^$1=\([^[:space:]#]*\).*/\1/p" infra/.env | tail -1; }
-curl -fsS -o /dev/null -X POST -u "$(env_value GRAFANA_ADMIN_USER):$(env_value GRAFANA_ADMIN_PASSWORD)" \
-  http://127.0.0.1:3120/api/admin/provisioning/alerting/reload
-echo "reloaded: prometheus, blackbox, grafana alerting"
+"${compose[@]}" kill -s SIGHUP prometheus blackbox alloy >/dev/null
+curl -fsS -o /dev/null -X POST -u "$grafana_auth" http://127.0.0.1:3120/api/admin/provisioning/alerting/reload
+echo "reloaded: prometheus, blackbox, alloy, grafana alerting"
+
+# Loki, Tempo and Beyla only read their config at startup: restart each one
+# whose config file changed (a checkout sets its mtime) since it started.
+restart=()
+for pair in loki:infra/loki/loki.yaml tempo:infra/tempo/tempo.yaml beyla:infra/beyla/beyla.yaml; do
+  service=${pair%%:*} config=${pair#*:}
+  started=$(docker inspect -f '{{.State.StartedAt}}' "$("${compose[@]}" ps -q "$service")")
+  if (( $(stat -c %Y "$config") >= $(date -d "$started" +%s) )); then
+    restart+=("$service")
+  fi
+done
+if (( ${#restart[@]} )); then
+  "${compose[@]}" restart "${restart[@]}" >/dev/null
+  echo "restarted for new config: ${restart[*]}"
+fi
 
 check() {
   for _ in $(seq 30); do
-    if curl -fsS -o /dev/null "$2"; then
+    if curl -fsS -o /dev/null "${@:2}"; then
       echo "ok: $1"
       return 0
     fi
     sleep 2
   done
-  echo "not answering: $1 ($2)" >&2
+  echo "not answering: $1 (${*: -1})" >&2
   return 1
 }
 
 check grafana http://127.0.0.1:3120/api/health
 check runner http://127.0.0.1:3121/run/
+# Loki and Tempo publish no ports; ask Grafana whether it reaches them
+check loki -u "$grafana_auth" http://127.0.0.1:3120/api/datasources/uid/loki/health
+check tempo -u "$grafana_auth" http://127.0.0.1:3120/api/datasources/uid/tempo/health
 
 # SIGHUP reloads in the background; wait for a successful reload newer than the signal
 reloaded() {

@@ -1,0 +1,62 @@
+// Ships the logs of this compose project's containers (and nothing else on the
+// machine) to Loki, labelled by compose service.
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=load-bench"]
+  }
+}
+
+discovery.relabel "containers" {
+  targets = []
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "project"
+  }
+}
+
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.containers.targets
+  relabel_rules = discovery.relabel.containers.rules
+  forward_to    = [loki.process.containers.receiver]
+}
+
+loki.process "containers" {
+  // The runner logs JSON; promote its level so Grafana can colour and filter it
+  stage.match {
+    selector = "{service=\"runner\"}"
+
+    stage.json {
+      expressions = { level = "level" }
+    }
+    stage.labels {
+      values = { level = "" }
+    }
+  }
+
+  // A server that starts logging every request under load would otherwise
+  // flood Loki on a small machine; keep at most 50 lines/s per service
+  stage.limit {
+    rate          = 50
+    burst         = 200
+    by_label_name = "service"
+    drop          = true
+  }
+
+  forward_to = [loki.write.loki.receiver]
+}
+
+loki.write "loki" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

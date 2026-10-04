@@ -66,7 +66,7 @@
         "enable": true,
         "hide": false,
         "iconColor": "rgba(255, 152, 48, 0.5)",
-        "expr": "count by (server, testid) (count_over_time(k6_vus[$__interval]))",
+        "expr": "count by (server, testid) (count_over_time(k6_http_reqs_total{group!~\"::setup|::teardown\"}[10s]))",
         "step": "5s",
         "titleFormat": "Load test on {{server}}",
         "textFormat": "{{testid}}",
@@ -107,7 +107,7 @@
       "url": "/run/",
       "icon": "bolt",
       "keepTime": false,
-      "targetBlank": false,
+      "targetBlank": true,
       "tooltip": "Start a load test against one server (one at a time)"
     },
     {

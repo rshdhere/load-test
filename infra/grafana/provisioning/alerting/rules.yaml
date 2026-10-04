@@ -17,6 +17,7 @@ groups:
           description: More than 2% of requests failed over the last 30s, which also fails the break test threshold.
         labels:
           severity: critical
+          kind: load-test  # shown on dashboards, not sent as notifications
         data:
           - refId: A
             relativeTimeRange: { from: 60, to: 0 }
@@ -50,6 +51,7 @@ groups:
           description: The median of 1s-window p99 latency over the last 30s is above 500 ms.
         labels:
           severity: warning
+          kind: load-test  # shown on dashboards, not sent as notifications
         data:
           - refId: A
             relativeTimeRange: { from: 60, to: 0 }
@@ -82,6 +84,7 @@ groups:
           description: The server's listen backlog is full, so new connections are being refused before the server sees them.
         labels:
           severity: warning
+          kind: load-test  # shown on dashboards, not sent as notifications
         data:
           - refId: A
             relativeTimeRange: { from: 60, to: 0 }
@@ -294,3 +297,37 @@ groups:
               type: threshold
               expression: B
               conditions: [{ evaluator: { type: gt, params: [0] } }]
+
+      - uid: server-5xx
+        title: Server answering with errors
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "{{ $labels.service_name }} answered {{ if $values.B.Value }}{{ humanizePercentage $values.B.Value }}{{ else }}over 5%{{ end }} of requests with a 5xx"
+          description: Measured inside the server by Beyla (eBPF), so it counts every request, not only k6's. Usually a server overwhelmed by a load test.
+        labels:
+          severity: warning
+          kind: load-test  # shown on dashboards, not sent as notifications
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                (sum by (service_name) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[2m]))
+                / sum by (service_name) (rate(http_server_request_duration_seconds_count[2m])))
+                and on (service_name) sum by (service_name) (rate(http_server_request_duration_seconds_count[2m])) > 1
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions: [{ evaluator: { type: gt, params: [0.05] } }]
