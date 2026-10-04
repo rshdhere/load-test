@@ -46,11 +46,15 @@ routes:
   patterns: [/api/v1/health, /api/v1/docs, /api/v1/openapi.json]
   unmatched: heuristic
 
-# RED metrics for every request, scraped by Prometheus
+# RED metrics for every request, scraped by Prometheus. These servers answer in well
+# under a millisecond, so the duration buckets start far below the 5 ms default.
 prometheus_export:
   port: 9400
   path: /metrics
   features: [application]
+  buckets:
+    duration_histogram: [0.0001, 0.00025, 0.0005, 0.00075, 0.001, 0.0015, 0.002, 0.003, 0.005, 0.0075,
+                         0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
 
 # A sample of requests as traces, sent to Tempo
 otel_traces_export:

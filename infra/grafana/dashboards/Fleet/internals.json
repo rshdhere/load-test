@@ -48,7 +48,7 @@
         "query": "actix,axum,tokio,go,gin,fiber,fastapi,flask,django,bun,node,express,fastify,runner,grafana,prometheus,loki,tempo,alloy,beyla,blackbox,cadvisor",
         "multi": true,
         "includeAll": true,
-        "allValue": ".+",
+        "allValue": "actix|axum|tokio|go|gin|fiber|fastapi|flask|django|bun|node|express|fastify|runner",
         "hide": 0,
         "current": {
           "selected": true,
@@ -725,6 +725,7 @@
           "sort": "desc"
         }
       },
+      "interval": "15s",
       "id": 4,
       "gridPos": {
         "x": 0,
@@ -815,6 +816,7 @@
           "sort": "desc"
         }
       },
+      "interval": "15s",
       "id": 5,
       "gridPos": {
         "x": 8,
@@ -903,6 +905,7 @@
           "sort": "desc"
         }
       },
+      "interval": "15s",
       "id": 6,
       "gridPos": {
         "x": 16,
@@ -927,7 +930,7 @@
     {
       "type": "table",
       "title": "Slowest recent requests",
-      "description": "Sampled requests slower than 50 ms, from the selected servers.",
+      "description": "Sampled server requests slower than 5 ms, from the selected servers. Most take well under a millisecond.",
       "datasource": {
         "type": "tempo",
         "uid": "tempo"
@@ -939,7 +942,7 @@
             "uid": "tempo"
           },
           "queryType": "traceql",
-          "query": "{resource.service.name=~\"$service\" && duration > 50ms}",
+          "query": "{resource.service.name=~\"$service\" && resource.service.name=~\"actix|axum|tokio|go|gin|fiber|fastapi|flask|django|bun|node|express|fastify\" && duration > 5ms}",
           "limit": 20,
           "tableType": "traces",
           "refId": "A"

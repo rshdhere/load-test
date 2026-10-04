@@ -135,6 +135,11 @@ def ts(title, desc, targets, unit="short", overrides=None, stack=False, fill=10,
              "options": {"legend": {"displayMode": legend, "placement": "bottom", "calcs": list(calcs),
                                     "showLegend": True, "sortBy": "Max", "sortDesc": True},
                          "tooltip": {"mode": "multi", "sort": "desc"}}}
+    targets = panel["targets"]
+    if interval is None and any(RED in q["expr"] for q in targets):
+        # Beyla is scraped every 5s but the datasource interval is 1s (for k6), so without a floor
+        # $__rate_interval would be too short to hold two samples
+        interval = "15s"
     if interval:
         panel["interval"] = interval
     return panel
@@ -1143,8 +1148,10 @@ def internals():
           8, 9)
 
     L.row("Traces")
-    L.add(traces("Slowest recent requests", "Sampled requests slower than 50 ms, from the selected servers.",
-                 '{resource.service.name=~"$service" && duration > 50ms}'), 12, 10)
+    L.add(traces("Slowest recent requests", "Sampled server requests slower than 5 ms, from the selected "
+                                            "servers. Most take well under a millisecond.",
+                 f'{{resource.service.name=~"$service" && resource.service.name=~"{NAMES}" && duration > 5ms}}'),
+          12, 10)
     L.add(traces("Recent requests", "The latest sampled requests from the selected servers.",
                  '{resource.service.name=~"$service"}'), 12, 10)
 
@@ -1167,7 +1174,8 @@ def internals():
     containers = [s["name"] for s in SERVERS] + ["runner", "grafana", "prometheus", "loki", "tempo", "alloy",
                                                  "beyla", "blackbox", "cadvisor"]
     service = {"name": "service", "label": "Service", "type": "custom", "query": ",".join(containers),
-               "multi": True, "includeAll": True, "allValue": ".+", "hide": 0,
+               # "All" means the app's containers; the observability stack's own (chatty) logs are opt-in
+               "multi": True, "includeAll": True, "allValue": "|".join(containers[:len(SERVERS) + 1]), "hide": 0,
                "current": {"selected": True, "text": ["All"], "value": ["$__all"]},
                "options": [{"selected": False, "text": c, "value": c} for c in containers]}
     return dashboard("internals", "Inside the Servers",
@@ -1355,7 +1363,7 @@ def stack():
     L.add(ts("Scrape duration", "How long each scrape job takes.",
              t("max by (job) (scrape_duration_seconds)", "{{job}}"), "s", fill=0, interval="1m"), 12, 12)
     L.add(ts("Samples ingested", "Samples appended to the TSDB per second (scrapes plus k6 remote write).",
-             t("rate(prometheus_tsdb_head_samples_appended_total[$__rate_interval])", "samples/s"), "short", interval="1m"), 8, 8)
+             t("sum(rate(prometheus_tsdb_head_samples_appended_total[$__rate_interval]))", "samples/s"), "short", interval="1m"), 8, 8)
     L.add(ts("Active series", "Series currently in the TSDB head block.",
              t("prometheus_tsdb_head_series", "series"), "short", interval="1m"), 8, 8)
     L.add(ts("TSDB size", "On-disk size of persisted blocks plus the write-ahead log.",
@@ -1436,11 +1444,15 @@ routes:
   patterns: [/api/v1/health, /api/v1/docs, /api/v1/openapi.json]
   unmatched: heuristic
 
-# RED metrics for every request, scraped by Prometheus
+# RED metrics for every request, scraped by Prometheus. These servers answer in well
+# under a millisecond, so the duration buckets start far below the 5 ms default.
 prometheus_export:
   port: 9400
   path: /metrics
   features: [application]
+  buckets:
+    duration_histogram: [0.0001, 0.00025, 0.0005, 0.00075, 0.001, 0.0015, 0.002, 0.003, 0.005, 0.0075,
+                         0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
 
 # A sample of requests as traces, sent to Tempo
 otel_traces_export:

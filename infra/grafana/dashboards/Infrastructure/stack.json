@@ -938,7 +938,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "rate(prometheus_tsdb_head_samples_appended_total[$__rate_interval])",
+          "expr": "sum(rate(prometheus_tsdb_head_samples_appended_total[$__rate_interval]))",
           "legendFormat": "samples/s",
           "refId": "A",
           "range": true,

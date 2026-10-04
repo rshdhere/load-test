@@ -1798,6 +1798,7 @@
           "sort": "desc"
         }
       },
+      "interval": "15s",
       "id": 23,
       "gridPos": {
         "x": 16,

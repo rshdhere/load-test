@@ -88,6 +88,8 @@ The first build compiles three Rust servers and takes a few minutes. Then open G
 
 On Docker Desktop the host dashboards describe Docker's Linux VM rather than your machine, since that is where the containers run. On a VPS they describe the VPS itself.
 
+Beyla needs a Linux kernel with BTF (5.8 or newer; check for `/sys/kernel/btf/vmlinux`) and runs privileged in the host's PID namespace to load its eBPF programs. It instruments only processes listening on the ports in `servers.json`: each server listens on that port inside its container too, so a server's address is the same everywhere (`http://fiber:3106` between containers, `http://localhost:3106` from the host). Without eBPF support Beyla exits and the "inside the server" panels stay empty; everything else works.
+
 ## Deploy to the VPS
 
 1. **DNS:** add an `A` record (and `AAAA` if the VPS has IPv6) for `o11y.raashed.com` pointing at the VPS.
@@ -99,6 +101,7 @@ On Docker Desktop the host dashboards describe Docker's Linux VM rather than you
    sudo ufw enable
    ```
    Every container is published on `127.0.0.1` or not published at all, and node_exporter binds only to the internal Docker bridge, so nothing else is reachable from outside. The third rule lets Prometheus, on that bridge, reach node_exporter; without it the Host dashboard stays empty and `up{job="host"}` is 0.
+   **Size:** the stack is meant for a small VPS (built against 2 cores and 4 GB). The logs and traces services have memory caps in `compose.yaml` (Loki 384 MB, Tempo 512 MB, Alloy 256 MB, Beyla 384 MB), Loki keeps 7 days and Tempo 3 days, and Beyla keeps 5% of requests as traces (`TRACE_SAMPLE` in `grafana/generate.py`) while its metrics count every request.
 3. **Install Docker Engine** with the Compose plugin ([docs](https://docs.docker.com/engine/install/)).
 4. **Clone and configure:**
    ```sh
@@ -132,13 +135,13 @@ git pull
 infra/deploy.sh
 ```
 
-`deploy.sh` rebuilds, restarts the stack with `--remove-orphans`, and fails unless Grafana and the runner answer on `127.0.0.1`. It never touches the nginx site, because certbot edits the installed copy; after changing `nginx/o11y.conf`, apply the change to `/etc/nginx/conf.d/o11y.conf` yourself. It also refuses to start if another program already holds one of the stack's host ports.
+`deploy.sh` rebuilds, restarts the stack with `--remove-orphans`, and fails unless Grafana and the runner answer on `127.0.0.1` and Grafana reaches Loki and Tempo. Config files are bind-mounted, so it also reloads what `up` would not: Prometheus, blackbox and Alloy on SIGHUP, Grafana's alert rules through its API, and it restarts Loki, Tempo or Beyla when their config file changed since they started. It never touches the nginx site, because certbot edits the installed copy; after changing `nginx/o11y.conf`, apply the change to `/etc/nginx/conf.d/o11y.conf` yourself. It also refuses to start if another program already holds one of the stack's host ports.
 
 ### CI/CD
 
 `.github/workflows/ci.yml` runs on every push and pull request:
 
-- **checks**: dashboards and `prometheus/targets.json` match `generate.py`, the compose file, Prometheus config and nginx site are valid, the runner vets and builds, the k6 scripts typecheck, and the shell scripts pass shellcheck
+- **checks**: dashboards, `prometheus/targets.json` and `beyla/beyla.yaml` match `generate.py`; the compose file, Prometheus, Loki, Alloy and Tempo configs and the nginx site are valid (each checked by its own binary); the runner is gofmt-clean, vets and builds; the k6 scripts typecheck; and the shell scripts pass shellcheck
 - **images**: builds all 14 images (cached between runs)
 - **deploy** (`main` only, after both pass): SSHes into the VPS, resets the checkout to the tested commit, runs `infra/deploy.sh`, then checks <https://o11y.raashed.com> answers
 
