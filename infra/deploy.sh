@@ -160,4 +160,16 @@ else
   exit 1
 fi
 
+# Beyla exits on a bad config and Docker keeps restarting it, so a quick look
+# can catch it running. Give it time, then require it up and scraped.
+sleep 15
+beyla_state=$(docker inspect -f '{{.State.Running}} {{.State.Restarting}}' "$("${compose[@]}" ps -q beyla)")
+if [[ $beyla_state == "true false" ]] \
+  && curl -fsS 'http://127.0.0.1:9090/api/v1/query?query=up%7Bjob%3D%22beyla%22%7D' | grep -q ',"1"\]'; then
+  echo "ok: beyla"
+else
+  echo "beyla is not running; see: docker compose -f infra/compose.yaml logs beyla" >&2
+  exit 1
+fi
+
 echo "deployed $GIT_COMMIT"

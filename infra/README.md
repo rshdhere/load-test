@@ -88,7 +88,7 @@ The first build compiles three Rust servers and takes a few minutes. Then open G
 
 On Docker Desktop the host dashboards describe Docker's Linux VM rather than your machine, since that is where the containers run. On a VPS they describe the VPS itself.
 
-Beyla needs a Linux kernel with BTF (5.8 or newer; check for `/sys/kernel/btf/vmlinux`) and runs privileged in the host's PID namespace to load its eBPF programs. It instruments only processes listening on the ports in `servers.json`: each server listens on that port inside its container too, so a server's address is the same everywhere (`http://fiber:3106` between containers, `http://localhost:3106` from the host). Without eBPF support Beyla exits and the "inside the server" panels stay empty; everything else works.
+Beyla needs a Linux kernel with BTF (5.8 or newer; check for `/sys/kernel/btf/vmlinux`) and runs privileged in the host's PID namespace to load its eBPF programs. It instruments only processes listening on the ports in `servers.json`: each server listens on that port inside its container too, so a server's address is the same everywhere (`http://fiber:3106` between containers, `http://localhost:3106` from the host). Without eBPF support Beyla exits, and `deploy.sh` fails its Beyla check; locally the "inside the server" panels just stay empty.
 
 ## Deploy to the VPS
 
