@@ -3,9 +3,13 @@
   "info": {
     "title": "Load Test Servers API",
     "version": "1.0.0",
-    "description": "Shared API contract implemented by every server in this repo (bun, node, express, fastify, fiber)."
+    "description": "Shared API contract implemented by every server in this repo. Besides health and docs, each server is a small in-memory todo backend: todos live in the server process (one process per server, so every request sees the same data), ids are increasing integers starting at 1, and at most 1000 todos are kept; creating one more drops the oldest. Anything not described here, including a known path with another method, answers 404 {\"error\": \"Not Found\"}. Every error body is {\"error\": \"<message>\"}. servers/conformance.py checks an implementation against this contract."
   },
-  "servers": [{ "url": "http://localhost:3000" }],
+  "servers": [
+    {
+      "url": "http://localhost:3000"
+    }
+  ],
   "paths": {
     "/api/v1/health": {
       "get": {
@@ -16,7 +20,9 @@
             "description": "Server is healthy",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Health" }
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
               }
             }
           }
@@ -30,7 +36,13 @@
         "responses": {
           "200": {
             "description": "HTML page rendering this spec",
-            "content": { "text/html": { "schema": { "type": "string" } } }
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -42,7 +54,213 @@
         "responses": {
           "200": {
             "description": "This document",
-            "content": { "application/json": { "schema": { "type": "object" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/todos": {
+      "get": {
+        "summary": "List todos, newest first",
+        "operationId": "listTodos",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1-100 (default 20).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Todos to skip, 0 or more (default 0).",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "done",
+            "in": "query",
+            "description": "Only todos with this done state: true or false.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of todos and how many match in total",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "limit, offset or done is out of range or not a valid value",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a todo",
+        "operationId": "createTodo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewTodo"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created todo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Todo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not a JSON object, title is missing, blank or too long, or done is not a boolean",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/todos/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "Todo id. Anything that is not a positive integer answers 404.",
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      ],
+      "get": {
+        "summary": "Get one todo",
+        "operationId": "getTodo",
+        "responses": {
+          "200": {
+            "description": "The todo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Todo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No todo with this id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Change a todo's title or done state",
+        "operationId": "updateTodo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TodoChange"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated todo (updatedAt changes)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Todo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not a JSON object, has neither title nor done, or one of them is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No todo with this id (checked before the body)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a todo",
+        "operationId": "deleteTodo",
+        "responses": {
+          "204": {
+            "description": "Deleted; no body"
+          },
+          "404": {
+            "description": "No todo with this id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -52,11 +270,128 @@
     "schemas": {
       "Health": {
         "type": "object",
-        "required": ["status", "server", "uptime"],
+        "required": [
+          "status",
+          "server",
+          "uptime"
+        ],
         "properties": {
-          "status": { "type": "string", "enum": ["ok"] },
-          "server": { "type": "string", "examples": ["bun"] },
-          "uptime": { "type": "number", "description": "Process uptime in seconds" }
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
+          },
+          "server": {
+            "type": "string",
+            "examples": [
+              "bun"
+            ]
+          },
+          "uptime": {
+            "type": "number",
+            "description": "Process uptime in seconds"
+          }
+        }
+      },
+      "Todo": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "done",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC, RFC 3339 with milliseconds and Z, e.g. 2026-10-05T12:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Same format; equals createdAt until the todo is changed"
+          }
+        }
+      },
+      "NewTodo": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "description": "Unknown fields are ignored.",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Leading and trailing whitespace is trimmed; the result must be 1-200 characters."
+          },
+          "done": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "TodoChange": {
+        "type": "object",
+        "minProperties": 1,
+        "description": "At least one of title and done. Unknown fields are ignored.",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Leading and trailing whitespace is trimmed; the result must be 1-200 characters."
+          },
+          "done": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TodoPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Todo"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "description": "Todos matching the filter, ignoring limit and offset"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "examples": [
+              "Not Found"
+            ]
+          }
         }
       }
     }
