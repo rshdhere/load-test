@@ -22,19 +22,20 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - name: Dashboards and probe targets match servers.json
+      - name: Dashboards, probe targets and Beyla config match servers.json
         run: |
           python3 infra/grafana/generate.py
-          git diff --exit-code -- infra/grafana/dashboards infra/prometheus/targets.json \
+          git diff --exit-code -- infra/grafana/dashboards infra/prometheus/targets.json infra/beyla/beyla.yaml \
             || { echo "::error::Run 'python3 infra/grafana/generate.py' and commit the result"; exit 1; }
 
       - uses: actions/setup-go@v7
         with:
           go-version-file: infra/runner/go.mod
           cache: false
-      - name: Runner vets and builds
+      - name: Runner is formatted, vets and builds
         working-directory: infra/runner
         run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; echo "::error::Run 'gofmt -w infra/runner'"; exit 1; }
           go vet ./...
           go build ./...
 
@@ -58,6 +59,21 @@ jobs:
         run: |
           docker run --rm -v "$PWD/infra/prometheus:/etc/prometheus:ro" \
             --entrypoint promtool prom/prometheus:v3.15.0 check config /etc/prometheus/prometheus.yaml
+
+      - name: Loki config is valid
+        run: |
+          docker run --rm -v "$PWD/infra/loki/loki.yaml:/etc/loki/loki.yaml:ro" \
+            grafana/loki:3.7.8 -config.file=/etc/loki/loki.yaml -verify-config
+
+      - name: Alloy config is valid
+        run: |
+          docker run --rm -v "$PWD/infra/alloy/config.alloy:/etc/alloy/config.alloy:ro" \
+            grafana/alloy:v1.20.1 validate /etc/alloy/config.alloy
+
+      - name: Tempo config is valid
+        run: |
+          docker run --rm -v "$PWD/infra/tempo/tempo.yaml:/etc/tempo.yaml:ro" \
+            grafana/tempo:3.1.0 -config.file=/etc/tempo.yaml -config.verify=true
 
       - name: nginx site is valid
         run: |
