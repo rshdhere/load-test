@@ -1,7 +1,7 @@
-import http from 'k6/http'
 import type { Options } from 'k6/options'
-import { pickTarget, reqParams, type Target } from './pick-live.ts'
+import { pickTarget, type Target } from './pick-live.ts'
 import { summarize } from './summary.ts'
+import { exercise, probe, systemTags, type Api } from './workload.ts'
 
 export const options: Options = {
   scenarios: {
@@ -21,14 +21,16 @@ export const options: Options = {
     http_req_failed: ['rate<0.02'],
   },
   summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
+  systemTags,
 }
 
-export function setup(): Target {
-  return pickTarget()
+export function setup(): Target & { api: Api } {
+  const target = pickTarget()
+  return { ...target, api: probe(target.url) }
 }
 
-export default function (target: Target) {
-  http.get(target.url, reqParams)
+export default function (target: Target & { api: Api }) {
+  exercise(target.api)
 }
 
 export const handleSummary = summarize('break')

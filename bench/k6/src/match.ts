@@ -2,10 +2,8 @@
 // time, one scenario per server, so their results land side by side in Grafana.
 //
 //   TARGETS="go=http://localhost:3104/api/v1/health,bun=http://localhost:3110/api/v1/health" RATE=500 k6 run src/match.ts
-import http from 'k6/http'
-import { check } from 'k6'
 import type { Options, Scenario } from 'k6/options'
-import { reqParams } from './pick-live.ts'
+import { exercise, probe, systemTags, type Api } from './workload.ts'
 
 type Metric = { values: Record<string, number> }
 type SummaryData = { metrics: Record<string, Metric | undefined>; state: { testRunDurationMs: number } }
@@ -52,14 +50,16 @@ export const options: Options = {
     ]),
   ),
   summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
+  systemTags,
 }
 
-export function hit() {
-  const res = http.get(__ENV.TARGET, reqParams)
-  check(res, {
-    'status 200': (r) => r.status === 200,
-    'got a response': (r) => r.status !== 0,
-  })
+// Which racers serve the todo API, keyed by their health URL
+export function setup(): Record<string, Api> {
+  return Object.fromEntries(targets.map((t) => [t.url, probe(t.url)]))
+}
+
+export function hit(apis: Record<string, Api>) {
+  exercise(apis[__ENV.TARGET])
 }
 
 export function handleSummary(data: SummaryData): Record<string, string> {

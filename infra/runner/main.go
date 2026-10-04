@@ -588,7 +588,7 @@ var pageTmpl = template.Must(template.New("page").Funcs(template.FuncMap{
 <div class="card">
   <dl>
     <dt>Test</dt><dd>{{if eq .Cfg.Script "break"}}Ramp 0 → 1000 virtual users{{else}}{{.Cfg.Rate}} requests per second{{end}} for {{.Cfg.Duration}}</dd>
-    <dt>Target</dt><dd><code>GET /api/v1/health</code> on {{.Server.Name}}</dd>
+    <dt>Requests</dt><dd>a todo-app mix (list, read, create, update, delete, a few bad requests) on servers with the todo API, else <code>GET /api/v1/health</code></dd>
     <dt>Model</dt><dd>{{.Server.Concurrency}}</dd>
   </dl>
   <form method="post" action="/run/{{.Server.Name}}" style="margin-top:20px">
@@ -605,7 +605,7 @@ var pageTmpl = template.Must(template.New("page").Funcs(template.FuncMap{
     </div>
     <dl>
       <dt>Test</dt><dd>{{.Cfg.MatchRate}} requests per second to each server, all at once, for {{.Cfg.MatchDuration}}</dd>
-      <dt>Target</dt><dd><code>GET /api/v1/health</code> on each server</dd>
+      <dt>Requests</dt><dd>a todo-app mix (list, read, create, update, delete, a few bad requests) on servers with the todo API, else <code>GET /api/v1/health</code></dd>
     </dl>
     <button type="submit" style="margin-top:20px" {{if or .State.Busy .State.CooldownSecs}}disabled{{end}}>▶ Start race</button>
   </form>
