@@ -68,3 +68,21 @@ scrape_configs:
     scrape_interval: 5s
     static_configs:
       - targets: ["runner:8080"]
+
+  # Request metrics from inside every server, recorded by Beyla through eBPF
+  - job_name: beyla
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["beyla:9400"]
+
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+
+  - job_name: tempo
+    static_configs:
+      - targets: ["tempo:3200"]
+
+  - job_name: alloy
+    static_configs:
+      - targets: ["alloy:12345"]

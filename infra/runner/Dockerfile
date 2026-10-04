@@ -1,7 +1,9 @@
 # Build context: repository root (needs bench/k6/src and infra/runner)
 FROM golang:1.26 AS build
 WORKDIR /src
-COPY infra/runner/go.mod infra/runner/*.go ./
+COPY infra/runner/go.mod infra/runner/go.sum ./
+RUN go mod download
+COPY infra/runner/*.go ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/runner .
 
 FROM grafana/k6:2.2.0

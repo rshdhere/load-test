@@ -23,11 +23,12 @@ export const options: Options = {
       preAllocatedVUs,
       maxVUs,
       gracefulStop: '10s',
+      // Lets the Grafana leaderboard compare latency between runs at the same rate. On the scenario
+      // because the runner's and grafana.sh's --tag flags replace options.tags entirely.
+      tags: { rate: String(rate) },
     },
   },
   summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
-  // Lets the Grafana leaderboard compare latency between runs at the same rate
-  tags: { rate: String(rate) },
 }
 
 export function setup(): Target {

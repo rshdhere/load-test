@@ -40,4 +40,6 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=int(os.environ.get("PORT", 3000)),
         workers=int(os.environ.get("WORKERS", os.cpu_count() or 1)),
+        # No per-request access log, like gunicorn's accesslog = None for Flask and Django
+        access_log=False,
     )

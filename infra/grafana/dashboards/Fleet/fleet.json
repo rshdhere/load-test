@@ -65,7 +65,7 @@
         "enable": true,
         "hide": false,
         "iconColor": "rgba(255, 152, 48, 0.5)",
-        "expr": "count by (server, testid) (count_over_time(k6_vus[$__interval]))",
+        "expr": "count by (server, testid) (count_over_time(k6_http_reqs_total{group!~\"::setup|::teardown\"}[10s]))",
         "step": "5s",
         "titleFormat": "Load test on {{server}}",
         "textFormat": "{{testid}}",
@@ -106,7 +106,7 @@
       "url": "/run/",
       "icon": "bolt",
       "keepTime": false,
-      "targetBlank": false,
+      "targetBlank": true,
       "tooltip": "Start a load test against one server (one at a time)"
     },
     {
@@ -165,7 +165,7 @@
       "transparent": true,
       "options": {
         "mode": "markdown",
-        "content": "### Self-hosted observability for 13 HTTP servers\nEvery server below implements the same API ([OpenAPI spec](https://github.com/rshdhere/load-test/blob/main/servers/openapi.json)) in a different language and framework, runs in its own container, and is health-checked every 5 seconds. Load tests are driven by k6 and streamed into Prometheus. Source: [github.com/rshdhere/load-test](https://github.com/rshdhere/load-test).\n\n**[\u25b6 Run a load test](/run/)** against any server and watch it live. One test runs at a time. See who wins on the **[Leaderboard](/d/leaderboard)**, or put servers next to each other in **[Compare servers](/d/compare-servers)**.",
+        "content": "### Self-hosted observability for 13 HTTP servers\nEvery server below implements the same API ([OpenAPI spec](https://github.com/rshdhere/load-test/blob/main/servers/openapi.json)) in a different language and framework, runs in its own container, and is health-checked every 5 seconds. Load tests are driven by k6 and streamed into Prometheus. Source: [github.com/rshdhere/load-test](https://github.com/rshdhere/load-test).\n\n**<a href=\"/run/\" target=\"_self\">\u25b6 Run a load test</a>** against any server and watch it live, or **<a href=\"/run/compare\" target=\"_self\">\u2694 race 2-3 servers</a>** head to head. One test runs at a time. See who wins on the **[Leaderboard](/d/leaderboard)**, or put servers next to each other in **[Compare servers](/d/compare-servers)**.",
         "code": {
           "language": "plaintext"
         }
@@ -566,7 +566,8 @@
               }
             ]
           },
-          "mappings": []
+          "mappings": [],
+          "noValue": "No tests in range"
         },
         "overrides": []
       },

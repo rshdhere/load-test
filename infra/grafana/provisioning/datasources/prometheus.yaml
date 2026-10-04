@@ -1,5 +1,8 @@
 apiVersion: 1
 
+# Metrics (Prometheus), logs (Loki) and traces (Tempo), linked to each other:
+# a trace_id in a log line opens the trace, and a span opens its service's logs
+# and request metrics.
 datasources:
   - name: Prometheus
     uid: prometheus
@@ -10,3 +13,49 @@ datasources:
     editable: false
     jsonData:
       timeInterval: 1s
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        # The runner logs JSON with the trace it belongs to
+        - name: trace_id
+          matcherType: regex
+          matcherRegex: '"trace_id":"(\w+)"'
+          datasourceUid: tempo
+          url: "$${__value.raw}"
+          urlDisplayLabel: View trace
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        filterByTraceID: false
+        filterBySpanID: false
+        customQuery: true
+        query: '{service="$${__span.tags["service.name"]}"}'
+      tracesToMetrics:
+        datasourceUid: prometheus
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        queries:
+          - name: Requests per second
+            query: 'sum by (http_response_status_code) (rate(http_server_request_duration_seconds_count{service_name="$${__span.tags["service.name"]}"}[1m]))'
+          - name: p99 latency
+            query: 'histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="$${__span.tags["service.name"]}"}[1m])))'

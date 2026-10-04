@@ -1,12 +1,10 @@
 name: load-bench
 
-# Servers under test. Each listens on 3000 inside its container and is published
-# on 127.0.0.1 only; infra/servers.json lists the host ports.
+# Servers under test. Each listens on its own port from infra/servers.json, the
+# same inside the container and on the host (127.0.0.1 only), so Beyla can tell
+# them apart by port and instrument nothing else on the machine.
 x-server: &server
   restart: unless-stopped
-  environment:
-    PORT: "3000"
-    WORKERS: ${WORKERS:-2}
   networks: [o11y]
 
 services:
@@ -14,67 +12,80 @@ services:
     <<: *server
     build: { context: ../servers, dockerfile: actix/Dockerfile }
     image: o11y/actix:local
-    ports: ["127.0.0.1:3101:3000"]
+    environment: { PORT: "3101", WORKERS: "${WORKERS:-2}" }
+    ports: ["127.0.0.1:3101:3101"]
   axum:
     <<: *server
     build: { context: ../servers, dockerfile: axum/Dockerfile }
     image: o11y/axum:local
-    ports: ["127.0.0.1:3102:3000"]
+    environment: { PORT: "3102", WORKERS: "${WORKERS:-2}" }
+    ports: ["127.0.0.1:3102:3102"]
   tokio:
     <<: *server
     build: { context: ../servers, dockerfile: tokio/Dockerfile }
     image: o11y/tokio:local
-    ports: ["127.0.0.1:3103:3000"]
+    environment: { PORT: "3103", WORKERS: "${WORKERS:-2}" }
+    ports: ["127.0.0.1:3103:3103"]
   go:
     <<: *server
     build: { context: ../servers, dockerfile: go/Dockerfile }
     image: o11y/go:local
-    ports: ["127.0.0.1:3104:3000"]
+    environment: { PORT: "3104", WORKERS: "${WORKERS:-2}" }
+    ports: ["127.0.0.1:3104:3104"]
   gin:
     <<: *server
     build: { context: ../servers, dockerfile: gin/Dockerfile }
     image: o11y/gin:local
-    ports: ["127.0.0.1:3105:3000"]
+    environment: { PORT: "3105", WORKERS: "${WORKERS:-2}" }
+    ports: ["127.0.0.1:3105:3105"]
   fiber:
     <<: *server
     build: { context: ../servers, dockerfile: fiber/Dockerfile }
     image: o11y/fiber:local
-    ports: ["127.0.0.1:3106:3000"]
+    environment: { PORT: "3106", WORKERS: "${WORKERS:-2}" }
+    ports: ["127.0.0.1:3106:3106"]
   fastapi:
     <<: *server
     build: { context: ../servers, dockerfile: fastapi/Dockerfile }
     image: o11y/fastapi:local
-    ports: ["127.0.0.1:3107:3000"]
+    environment: { PORT: "3107", WORKERS: "${WORKERS:-2}" }
+    ports: ["127.0.0.1:3107:3107"]
   flask:
     <<: *server
     build: { context: ../servers, dockerfile: flask/Dockerfile }
     image: o11y/flask:local
-    ports: ["127.0.0.1:3108:3000"]
+    environment: { PORT: "3108", WORKERS: "${WORKERS:-2}" }
+    ports: ["127.0.0.1:3108:3108"]
   django:
     <<: *server
     build: { context: ../servers, dockerfile: django/Dockerfile }
     image: o11y/django:local
-    ports: ["127.0.0.1:3109:3000"]
+    environment: { PORT: "3109", WORKERS: "${WORKERS:-2}" }
+    ports: ["127.0.0.1:3109:3109"]
   bun:
     <<: *server
     build: { context: ../servers, dockerfile: bun/Dockerfile }
     image: o11y/bun:local
-    ports: ["127.0.0.1:3110:3000"]
+    environment: { PORT: "3110", WORKERS: "${WORKERS:-2}" }
+    ports: ["127.0.0.1:3110:3110"]
   node:
     <<: *server
     build: { context: ../servers, dockerfile: node/Dockerfile }
     image: o11y/node:local
-    ports: ["127.0.0.1:3111:3000"]
+    environment: { PORT: "3111", WORKERS: "${WORKERS:-2}" }
+    ports: ["127.0.0.1:3111:3111"]
   express:
     <<: *server
     build: { context: ../servers, dockerfile: express/Dockerfile }
     image: o11y/express:local
-    ports: ["127.0.0.1:3112:3000"]
+    environment: { PORT: "3112", WORKERS: "${WORKERS:-2}" }
+    ports: ["127.0.0.1:3112:3112"]
   fastify:
     <<: *server
     build: { context: ../servers, dockerfile: fastify/Dockerfile }
     image: o11y/fastify:local
-    ports: ["127.0.0.1:3113:3000"]
+    environment: { PORT: "3113", WORKERS: "${WORKERS:-2}" }
+    ports: ["127.0.0.1:3113:3113"]
 
   # Observability stack
   prometheus:
@@ -119,6 +130,8 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_NEWS_NEWS_FEED_ENABLED: "false"
+      # Read by the notification provisioning that infra/deploy.sh writes when it is set
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
     ports: ["127.0.0.1:3120:3001"]
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
@@ -171,6 +184,58 @@ services:
     networks: [o11y]
     restart: unless-stopped
 
+  # Logs: Alloy tails this project's containers and ships them to Loki
+  loki:
+    image: grafana/loki:3.7.8
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    networks: [o11y]
+    mem_limit: 384m
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:v1.20.1
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/var/lib/alloy",
+              "/etc/alloy/config.alloy"]
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy
+    networks: [o11y]
+    mem_limit: 256m
+    # Retries pushes until Loki is ready (the Loki image has no shell tools for a healthcheck)
+    depends_on: [loki]
+    restart: unless-stopped
+
+  # Traces: Beyla's server spans and the runner's own spans, over OTLP
+  tempo:
+    image: grafana/tempo:3.1.0
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    networks: [o11y]
+    mem_limit: 512m
+    restart: unless-stopped
+
+  # eBPF auto-instrumentation of the servers (no code changes, any language):
+  # RED metrics for every request and sampled traces. It needs the host's PID
+  # namespace and privileges to load eBPF programs; infra/beyla/beyla.yaml limits
+  # it to the servers' ports.
+  beyla:
+    image: grafana/beyla:3.37.0
+    environment:
+      BEYLA_CONFIG_PATH: /etc/beyla/beyla.yaml
+    volumes:
+      - ./beyla/beyla.yaml:/etc/beyla/beyla.yaml:ro
+    pid: host
+    privileged: true
+    networks: [o11y]
+    mem_limit: 384m
+    restart: unless-stopped
+
   # Lets visitors start one load test at a time; the host's nginx proxies /run/ to it
   runner:
     build: { context: .., dockerfile: infra/runner/Dockerfile }
@@ -183,6 +248,7 @@ services:
       RUNNER_PER_IP_HOURLY: ${RUNNER_PER_IP_HOURLY:-3}
       # Set by infra/deploy.sh; shown on the dashboards as the deployed commit and as deploy markers
       GIT_COMMIT: ${GIT_COMMIT:-dev}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
     volumes:
       - ./servers.json:/etc/runner/servers.json:ro
       - runner-results:/results
@@ -201,3 +267,6 @@ volumes:
   prometheus-data:
   grafana-data:
   runner-results:
+  loki-data:
+  tempo-data:
+  alloy-data:

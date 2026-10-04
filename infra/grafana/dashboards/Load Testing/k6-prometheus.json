@@ -98,7 +98,7 @@
       "url": "/run/",
       "icon": "bolt",
       "keepTime": false,
-      "targetBlank": false,
+      "targetBlank": true,
       "tooltip": "Start a load test against one server (one at a time)"
     },
     {

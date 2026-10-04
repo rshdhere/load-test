@@ -5,6 +5,7 @@
 
 Writes:
   infra/prometheus/targets.json                     blackbox probe targets
+  infra/beyla/beyla.yaml                            which processes Beyla instruments, by port
   infra/grafana/dashboards/Fleet/*.json             fleet overview, leaderboard, server and run comparison
   infra/grafana/dashboards/Servers/<Lang>/*.json    one dashboard per server
   infra/grafana/dashboards/Load Testing/live.json   live k6 run view
@@ -99,6 +100,10 @@ def stat(title, desc, targets, unit="short", th=None, decimals=None, mappings=No
     d = {"unit": unit, "color": {"mode": "thresholds"}, "thresholds": th or BLUE, "mappings": mappings or []}
     if decimals is not None:
         d["decimals"] = decimals
+    targets = targets if isinstance(targets, list) else [targets]
+    if any("k6_" in q["expr"] for q in targets):
+        # Load-test stats are empty until someone runs a test; say so instead of "No data"
+        d["noValue"] = "No tests in range"
     return {"type": "stat", "title": title, "description": desc, "datasource": DS,
             "targets": targets if isinstance(targets, list) else [targets],
             "fieldConfig": {"defaults": d, "overrides": []},
@@ -145,6 +150,12 @@ def bars(title, desc, targets, unit, th=None, color="continuous-BlPu"):
                         "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}}}
 
 
+def run_link(label, path):
+    """Link to the load-test runner, which the host's nginx serves next to Grafana. Grafana's router
+    swallows plain same-site links and shows its own 404; target="_self" forces a real page load."""
+    return f'<a href="{path}" target="_self">{label}</a>'
+
+
 def text(content):
     return {"type": "text", "title": "", "transparent": True,
             "options": {"mode": "markdown", "content": content, "code": {"language": "plaintext"}}}
@@ -168,6 +179,47 @@ def alert_list(title, desc):
                         "showInstances": True, "folder": None,
                         "stateFilter": {"firing": True, "pending": True, "noData": False, "normal": False,
                                         "error": True}}}
+
+
+LOKI = {"type": "loki", "uid": "loki"}
+TEMPO = {"type": "tempo", "uid": "tempo"}
+# Beyla's request histogram (OpenTelemetry semantic conventions), one series per server
+RED = "http_server_request_duration_seconds"
+
+
+def logs(title, desc, expr):
+    return {"type": "logs", "title": title, "description": desc, "datasource": LOKI,
+            "targets": [{"datasource": LOKI, "expr": expr, "refId": "A", "queryType": "range"}],
+            "options": {"showTime": True, "wrapLogMessage": True, "enableLogDetails": True,
+                        "sortOrder": "Descending", "dedupStrategy": "none", "prettifyLogMessage": False}}
+
+
+def traces(title, desc, query, limit=20):
+    """Recent traces from Tempo as a table; clicking a trace ID opens the trace view."""
+    return {"type": "table", "title": title, "description": desc, "datasource": TEMPO,
+            "targets": [{"datasource": TEMPO, "queryType": "traceql", "query": query, "limit": limit,
+                         "tableType": "traces", "refId": "A"}],
+            "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}},
+                            "overrides": []},
+            "options": {"showHeader": True, "cellHeight": "sm", "footer": {"show": False}}}
+
+
+def red_rate(sel, by=""):
+    group = f" by ({by})" if by else ""
+    return f"sum{group} (rate({RED}_count{{{sel}}}[$__rate_interval]))"
+
+
+def red_quantile(q, sel, by="", window="$__rate_interval"):
+    group = f"le, {by}" if by else "le"
+    return f"histogram_quantile({q}, sum by ({group}) (rate({RED}_bucket{{{sel}}}[{window}])))"
+
+
+def red_errors(sel, by="", window="$__rate_interval"):
+    """Share of requests the server answered with a 5xx."""
+    group = f" by ({by})" if by else ""
+    total = f"sum{group} (rate({RED}_count{{{sel}}}[{window}]))"
+    failed = f'sum{group} (rate({RED}_count{{{sel},http_response_status_code=~"5.."}}[{window}]))'
+    return f"({failed} or {total} * 0) / {total}"
 
 
 def by_name(name, *props):
@@ -226,7 +278,8 @@ def dashboard(uid, title, desc, layout, variables, tags, refresh="10s", time_fro
 # Marked on every graph: when load tests ran (k6 or the visitor runner) and when the stack was deployed
 ANNOTATIONS = [
     {"name": "Load tests", "datasource": DS, "enable": True, "hide": False, "iconColor": "rgba(255, 152, 48, 0.5)",
-     "expr": "count by (server, testid) (count_over_time(k6_vus[$__interval]))", "step": "5s",
+     "expr": 'count by (server, testid) (count_over_time(k6_http_reqs_total{group!~"::setup|::teardown"}[10s]))',
+     "step": "5s",
      "titleFormat": "Load test on {{server}}", "textFormat": "{{testid}}", "tagKeys": "server",
      "useValueForTime": False},
     {"name": "Deploys", "datasource": DS, "enable": True, "hide": False, "iconColor": "rgba(115, 191, 105, 1)",
@@ -260,8 +313,9 @@ def nav_links():
     return [
         {"title": "Fleet", "type": "link", "url": "/d/fleet", "icon": "apps", "keepTime": True,
          "targetBlank": False, "tooltip": "All servers at a glance"},
+        # New tab: Grafana's router would otherwise catch /run/ and show its 404 (see run_link)
         {"title": "Run a load test", "type": "link", "url": "/run/", "icon": "bolt", "keepTime": False,
-         "targetBlank": False, "tooltip": "Start a load test against one server (one at a time)"},
+         "targetBlank": True, "tooltip": "Start a load test against one server (one at a time)"},
         *(tag_dropdown(title, tag) for title, tag in (("Servers", "per-server"), ("Compare", "comparison"),
                                                        ("Load testing", "load-testing"), ("Ops", "ops"))),
     ]
@@ -329,7 +383,8 @@ def fleet():
         f"({REPO_URL}/blob/main/servers/openapi.json)) in a different language and framework, runs in its own "
         "container, and is health-checked every 5 seconds. Load tests are driven by k6 and streamed into "
         f"Prometheus. Source: [{REPO_URL.removeprefix('https://')}]({REPO_URL}).\n\n"
-        "**[▶ Run a load test](/run/)** against any server and watch it live. One test runs at a time. "
+        f"**{run_link('▶ Run a load test', '/run/')}** against any server and watch it live, or "
+        f"**{run_link('⚔ race 2-3 servers', '/run/compare')}** head to head. One test runs at a time. "
         "See who wins on the **[Leaderboard](/d/leaderboard)**, or put servers next to each other in "
         "**[Compare servers](/d/compare-servers)**."), 24, 4)
 
@@ -486,7 +541,8 @@ def server_dashboard(s):
         f"[Source]({REPO_URL}/tree/main/servers/{name}) · "
         f"[Dockerfile]({REPO_URL}/blob/main/servers/{name}/Dockerfile) · "
         f"Load-test it from a shell: `SERVER={name} npm run break:grafana` in `bench/k6`\n\n"
-        f"### [▶ Run a load test on {s['title']}](/run/{name})"), 24, 6)
+        f"### {run_link('▶ Run a load test on ' + s['title'], f'/run/{name}')} · "
+        f"{run_link('⚔ Race it against others', f'/run/compare?server={name}')}"), 24, 6)
 
     L.row("Health")
     L.add(stat("Status", "Result of the most recent /api/v1/health check.", t(probe, instant=True),
@@ -528,7 +584,10 @@ def server_dashboard(s):
                                        "Dashed lines mark the 6x and 14.4x alerting levels.",
              [t(slo_burn(srv, "1h"), "1h window", "A"), t(slo_burn(srv, "6h"), "6h window", "B")],
              "suffix:×", min_=0, soft_max=20, th=BURN_TH, th_style="dashed", fill=0, interval="1m",
-             calcs=("max", "last")), 24, 7)
+             calcs=("max", "last")), 16, 7)
+    mine = alert_list("Alerts", f"Alerts firing or pending for {s['title']} right now. Empty is good.")
+    mine["options"]["alertInstanceLabelFilter"] = f'{{server="{name}"}}'
+    L.add(mine, 8, 7)
 
     L.row("Container resources")
     L.add(ts("CPU", "CPU as a share of one core (200% = 2 cores). Single-threaded runtimes cap out near 100%.",
@@ -570,6 +629,40 @@ def server_dashboard(s):
                                            "to its core limit.",
              t(f"sum(rate(container_cpu_usage_seconds_total{{{sel}}}[$__rate_interval]))", "cpu"), "percentunit",
              min_=0, interval="15s"), 24, 7)
+
+    beyla = f'service_name="{name}"'
+    L.row("Inside the server · every request, seen through eBPF")
+    L.add(stat("Requests/s", "Requests the server is answering right now, counted by Beyla from inside the "
+                             "kernel: load tests, health checks and anything else.",
+               t(red_rate(beyla).replace("$__rate_interval", "1m"), instant=True), "reqps", decimals=1,
+               graph=True), 6, 4)
+    L.add(stat("Server errors", "Share of requests in the time range the server answered with a 5xx.",
+               t(red_errors(beyla, window="$__range"), instant=True), "percentunit", ERR_TH, 2), 6, 4)
+    L.add(stat("Server p50", "Median time from the request reaching the server to the response leaving it, "
+                             "over the time range.",
+               t(red_quantile(0.5, beyla, window="$__range"), instant=True), "s", LAT_TH), 6, 4)
+    L.add(stat("Server p99", "99th percentile of the same, over the time range.",
+               t(red_quantile(0.99, beyla, window="$__range"), instant=True), "s", LAT_TH), 6, 4)
+    L.add(ts("Requests by status code", "Responses per second, by HTTP status, as the server sent them.",
+             t(red_rate(beyla, "http_response_status_code"), "{{http_response_status_code}}"), "reqps",
+             stack=True, fill=40,
+             overrides=[{"matcher": {"id": "byRegexp", "options": "^2\\d\\d$"},
+                         "properties": [prop("color", {"mode": "fixed", "fixedColor": "green"})]},
+                        {"matcher": {"id": "byRegexp", "options": "^5\\d\\d$"},
+                         "properties": [prop("color", {"mode": "fixed", "fixedColor": "red"})]}]), 12, 8)
+    L.add(ts("Inside the server vs at the client", "Server-side p50 and p99 (Beyla) against the p99 k6 measured "
+                                                   "(dashed). The gap is time spent in the network, kernel "
+                                                   "queues and k6 itself, not in the server's code.",
+             [t(red_quantile(0.5, beyla), "server p50", "A"), t(red_quantile(0.99, beyla), "server p99", "B"),
+              t(f'max(k6_http_req_duration_p99{{server="{name}",group!~"::setup|::teardown"}})', "k6 p99", "C")],
+             "s", fill=0, overrides=[by_name("k6 p99", *dashed("orange"))]), 12, 8)
+
+    L.row("Logs and traces")
+    L.add(logs("Logs", f"Everything the {s['title']} container writes, shipped to Loki by Alloy.",
+               f'{{service="{name}"}}'), 12, 10)
+    L.add(traces("Recent traces", f"A {TRACE_SAMPLE:.0%} sample of requests, traced by Beyla through eBPF. "
+                                  "Click a trace ID to see where the time went.",
+                 f'{{resource.service.name="{name}"}}'), 12, 10)
 
     variables = [v_datasource(), v_const("server", name),
                  v_query("testid", "Run", f'label_values(k6_vus{{server="{name}"}}, testid)')]
@@ -658,9 +751,13 @@ def live():
              t(svc_cpu(f'{SVC}=~"$server",{SVC}=~"{NAMES}"'), "{{server}}"), "percentunit", min_=0, interval="15s"), 8, 8)
     L.add(ts("Server container memory", "Working-set memory of the selected servers' containers.",
              t(svc_mem(f'{SVC}=~"$server",{SVC}=~"{NAMES}"'), "{{server}}"), "bytes", min_=0, interval="15s"), 8, 8)
+    L.add(ts("p99 inside the server", "The servers' own 99th-percentile response time, from eBPF (Beyla). "
+                                      "Compare with k6's p99 above: the gap is network and queueing.",
+             t(red_quantile(0.99, 'service_name=~"$server"', "service_name"), "{{service_name}}"), "s",
+             th=LAT_TH, th_style="dashed"), 8, 8)
     L.add(ts("Host CPU per core", "A single core pinned near 100% points to a single-threaded server.",
              t('1 - avg by (cpu) (rate(node_cpu_seconds_total{job="host",mode="idle"}[$__rate_interval]))',
-               "cpu {{cpu}}"), "percentunit", min_=0, max_=1, fill=0, interval="15s"), 8, 8)
+               "cpu {{cpu}}"), "percentunit", min_=0, max_=1, fill=0, interval="15s"), 24, 7)
 
     return dashboard("load-live", "Live Load Test",
                      "Throughput, latency and errors for k6 runs as they stream in, next to the server's own "
@@ -870,6 +967,216 @@ def compare_servers():
                      time_from="now-24h")
 
 
+def head_to_head():
+    """One race from the runner's /run/compare page: 2-3 servers at the same rate, at the same time."""
+    L = Layout()
+    M = 'match="$match",group!~"::setup|::teardown"'
+    rps = f"sum by (server) (rate(k6_http_reqs_total{{{M}}}[$__rate_interval]))"
+    requests = f"sum by (server) (max_over_time(k6_http_reqs_total{{{M}}}[$__range]))"
+    failed = f'sum by (server) (max_over_time(k6_http_reqs_total{{{M},expected_response="false"}}[$__range]))'
+    errors = f"({failed} or {requests} * 0) / {requests}"
+    typical = lambda p: (f"quantile_over_time(0.5, (max by (server) (k6_http_req_duration_{p}{{{M}}}))"
+                         f"[$__range:2s])")
+    racing = f"and on (server) (sum by (server) (rate(k6_http_reqs_total{{{M}}}[1m])) > 0)"
+    cpu = f'{CPU_REC}{{server=~"$server"}}'
+    avg_cpu = f"avg_over_time(({cpu} {racing})[$__range:15s])"
+    per_core = (f"sum_over_time((sum by (server) (rate(k6_http_reqs_total{{{M}}}[1m])))[$__range:15s]) / "
+                f"sum_over_time(({cpu} {racing})[$__range:15s])")
+    peak_mem = f'max_over_time(({MEM_REC}{{server=~"$server"}} {racing})[$__range:15s])'
+
+    L.add(text(
+        "### ⚔ Head to head\n"
+        "Every server in this race got the **same request rate at the same moment**, from one k6 process on the "
+        "same machine, so they also competed for CPU: a hungry server can slow its rivals. Pick an earlier race "
+        "from **Race** above (widen the time range to when it ran). "
+        f"**{run_link('Start a new race', '/run/compare')}**."), 24, 3)
+
+    L.row("Winners")
+    for title, desc, expr, unit, th in (
+        ("Lowest p99", "Lowest typical p99 latency: the median of each 1s window's p99.",
+         f"bottomk(1, {typical('p99')})", "s", LAT_TH),
+        ("Lowest median", "Lowest typical median latency.", f"bottomk(1, {typical('p50')})", "s", LAT_TH),
+        ("Fewest errors", "Lowest share of failed requests.", f"bottomk(1, {errors})", "percentunit", ERR_TH),
+        ("Most efficient", "Most requests served per CPU-second during the race.",
+         f"topk(1, {per_core})", "reqps", BLUE),
+    ):
+        L.add(stat(title, desc, t(expr, "{{server}}", instant=True), unit, th, text_mode="value_and_name"), 6, 5)
+
+    L.row("Scoreboard")
+    cols = [
+        ("A", requests, "Requests", "short"),
+        ("B", errors, "Error rate", "percentunit"),
+        ("C", typical("p50"), "Typical median", "s"),
+        ("D", typical("p95"), "Typical p95", "s"),
+        ("E", typical("p99"), "Typical p99", "s"),
+        ("F", f"max by (server) (max_over_time(k6_http_req_duration_p99{{{M}}}[$__range]))", "Worst p99", "s"),
+        ("G", avg_cpu, "Avg CPU", "percentunit"),
+        ("H", per_core, "Req/s per core", "reqps"),
+        ("I", peak_mem, "Peak memory", "bytes"),
+    ]
+    overrides = [by_name("server", prop("displayName", "Server"), server_link(), prop("custom.width", 120))]
+    for ref, _, name, unit in cols:
+        p = [prop("displayName", name), prop("unit", unit)]
+        if unit == "s":
+            p += [prop("custom.cellOptions", {"type": "color-text"}), prop("thresholds", LAT_TH)]
+        if name == "Error rate":
+            p += [prop("custom.cellOptions", {"type": "color-background", "mode": "basic"}),
+                  prop("thresholds", ERR_TH), prop("decimals", 2)]
+        if name == "Req/s per core":
+            p += [prop("custom.cellOptions", {"type": "gauge", "mode": "gradient", "valueDisplayMode": "text"}),
+                  prop("color", {"mode": "continuous-BlPu"}), prop("decimals", 0)]
+        overrides.append(by_name(f"Value #{ref}", *p))
+    L.add({"type": "table", "title": "Scoreboard",
+           "description": "Every racer side by side, fastest typical p99 first. Click a server for its dashboard.",
+           "datasource": DS, "targets": [t(e, ref=r, instant=True, table=True) for r, e, _, _ in cols],
+           "transformations": [{"id": "merge", "options": {}},
+                               {"id": "organize", "options": {"excludeByName": {"Time": True},
+                                                              "indexByName": {"server": 0}}},
+                               {"id": "sortBy", "options": {"sort": [{"field": "Value #E"}]}}],
+           "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}},
+                                        "thresholds": BLUE},
+                           "overrides": overrides},
+           "options": {"showHeader": True, "cellHeight": "md", "footer": {"show": False}}}, 24, 6)
+
+    L.row("The race, second by second")
+    L.add(ts("Requests per second", "Each server's throughput. A line that falls below the others means that "
+                                    "server could not keep up and k6 dropped requests.",
+             t(rps, "{{server}}"), "reqps"), 12, 9)
+    L.add(ts("p99 latency", "Each server's per-window p99. Dashed lines mark 100 ms and 500 ms.",
+             t(f"max by (server) (k6_http_req_duration_p99{{{M}}})", "{{server}}"), "s", th=LAT_TH,
+             th_style="dashed"), 12, 9)
+    L.add(ts("Median latency", "Each server's per-window median.",
+             t(f"max by (server) (k6_http_req_duration_p50{{{M}}})", "{{server}}"), "s"), 12, 8)
+    L.add(ts("Error rate", "Failed requests as a share of each server's requests.",
+             t(f'(sum by (server) (rate(k6_http_reqs_total{{{M},expected_response="false"}}[$__rate_interval])) '
+               f"or {rps} * 0) / {rps}", "{{server}}"),
+             "percentunit", min_=0, soft_max=0.05, th=ERR_TH, th_style="line+area"), 12, 8)
+    L.add(ts("p99 inside the server", "Each racer's own 99th-percentile response time, measured in the kernel "
+                                      "by Beyla. Compare with k6's p99 above: the gap is network and queueing.",
+             t(red_quantile(0.99, 'service_name=~"$server"', "service_name"), "{{service_name}}"), "s",
+             th=LAT_TH, th_style="dashed"), 12, 8)
+    L.add(ts("Server errors (5xx)", "Share of each racer's responses that were server errors, from eBPF.",
+             t(red_errors('service_name=~"$server"', "service_name"), "{{service_name}}"), "percentunit", min_=0,
+             soft_max=0.05, th=ERR_TH, th_style="line+area"), 12, 8)
+    L.add(ts("Container CPU", "Each server's CPU as a share of one core (200% = 2 cores).",
+             t(svc_cpu(f'{SVC}=~"$server"'), "{{server}}"), "percentunit", min_=0, interval="5s"), 12, 8)
+    L.add(ts("Container memory", "Each server's working-set memory.",
+             t(svc_mem(f'{SVC}=~"$server"'), "{{server}}"), "bytes", min_=0, interval="5s"), 12, 8)
+
+    L.row("Alerts")
+    racers = alert_list("Alerts on these servers", "Alerts firing or pending for the servers in this race, for "
+                                                   "example high error rates or latency under load.")
+    racers["options"]["alertInstanceLabelFilter"] = '{server=~"${server:regex}"}'
+    L.add(racers, 24, 6)
+
+    match = v_query("match", "Race", 'label_values(k6_http_reqs_total{script="match"}, match)', multi=False,
+                    include_all=False, current_all=False)
+    match["sort"] = 2  # newest first: ids end in a UTC timestamp
+    server = v_query("server", "Servers", 'label_values(k6_http_reqs_total{match="$match"}, server)', hide=2)
+    # "All" must expand to this race's servers, not ".*", or the container panels and the alert list
+    # would match every container and every alert
+    server["allValue"] = None
+    return dashboard("match", "Head to Head",
+                     "Two or three servers raced at the same rate at the same time: winners, a scoreboard and "
+                     "the race second by second.",
+                     L, [v_datasource(), match, server], ["live", "comparison", "load-testing"], refresh="5s",
+                     time_from="now-15m",
+                     links=nav_links() + [{"title": "Start a race", "type": "link", "icon": "bolt",
+                                           "url": "/run/compare", "keepTime": False, "targetBlank": True,
+                                           "tooltip": "Race 2-3 servers against each other"}])
+
+
+def internals():
+    """The three signals from the servers' side: RED metrics and traces from Beyla, logs from Loki."""
+    L = Layout()
+    sel = 'service_name=~"$service"'
+    L.add(text(
+        "### Inside the servers\n"
+        "k6 shows what a client sees. This page shows what the **servers** saw: every request counted by "
+        "[Beyla](https://grafana.com/oss/beyla-ebpf/) through eBPF, without touching their code, a "
+        f"{TRACE_SAMPLE:.0%} sample of requests as traces in Tempo, and every container's logs in Loki. Click a "
+        "trace ID for the trace, or a log line's trace link to jump from logs to traces."), 24, 3)
+
+    L.row("Requests, errors and duration (RED)")
+    cols = [
+        ("A", f"sum by (service_name) (rate({RED}_count{{{sel}}}[$__range]))", "Avg req/s", "reqps"),
+        ("B", f"sum by (service_name) (increase({RED}_count{{{sel}}}[$__range]))", "Requests", "short"),
+        ("C", red_errors(sel, "service_name", "$__range"), "5xx", "percentunit"),
+        ("D", red_quantile(0.5, sel, "service_name", "$__range"), "p50", "s"),
+        ("E", red_quantile(0.99, sel, "service_name", "$__range"), "p99", "s"),
+    ]
+    overrides = [by_name("service_name", prop("displayName", "Server"), server_link())]
+    for ref, _, name, unit in cols:
+        p = [prop("displayName", name), prop("unit", unit)]
+        if unit == "s":
+            p += [prop("custom.cellOptions", {"type": "color-text"}), prop("thresholds", LAT_TH)]
+        if name == "5xx":
+            p += [prop("custom.cellOptions", {"type": "color-background", "mode": "basic"}),
+                  prop("thresholds", ERR_TH), prop("decimals", 2)]
+        if name == "Avg req/s":
+            p += [prop("decimals", 1)]
+        overrides.append(by_name(f"Value #{ref}", *p))
+    table = {"type": "table", "title": "Every server, from the inside",
+             "description": "Requests each server answered over the time range, measured in the kernel by Beyla. "
+                            "Click a server for its dashboard.",
+             "datasource": DS, "targets": [t(e, ref=r, instant=True, table=True) for r, e, _, _ in cols],
+             "transformations": [{"id": "merge", "options": {}},
+                                 {"id": "organize", "options": {"excludeByName": {"Time": True},
+                                                                "indexByName": {"service_name": 0}}},
+                                 {"id": "sortBy", "options": {"sort": [{"field": "Value #E"}]}}],
+             "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}},
+                                          "thresholds": BLUE},
+                             "overrides": overrides},
+             "options": {"showHeader": True, "cellHeight": "sm", "footer": {"show": False}}}
+    L.add(table, 24, 12)
+    server_link_by_service = [prop("links", [{"title": "Open ${__field.labels.service_name} dashboard",
+                                              "url": "/d/server-${__field.labels.service_name}?${__url_time_range}"}])]
+    L.add(ts("Requests per second", "Requests each server answered.",
+             t(red_rate(sel, "service_name"), "{{service_name}}"), "reqps",
+             overrides=[{"matcher": {"id": "byType", "options": "number"}, "properties": server_link_by_service}]),
+          8, 9)
+    L.add(ts("5xx share", "Share of each server's responses that were server errors.",
+             t(red_errors(sel, "service_name"), "{{service_name}}"), "percentunit", min_=0, soft_max=0.05,
+             th=ERR_TH, th_style="line+area"), 8, 9)
+    L.add(ts("p99 inside the server", "Each server's 99th-percentile time from request in to response out.",
+             t(red_quantile(0.99, sel, "service_name"), "{{service_name}}"), "s", th=LAT_TH, th_style="dashed"),
+          8, 9)
+
+    L.row("Traces")
+    L.add(traces("Slowest recent requests", "Sampled requests slower than 50 ms, from the selected servers.",
+                 '{resource.service.name=~"$service" && duration > 50ms}'), 12, 10)
+    L.add(traces("Recent requests", "The latest sampled requests from the selected servers.",
+                 '{resource.service.name=~"$service"}'), 12, 10)
+
+    L.row("Logs")
+    volume = {"type": "timeseries", "title": "Log lines by container",
+              "description": "Lines per second each container wrote, from Loki.", "datasource": LOKI,
+              "targets": [{"datasource": LOKI, "refId": "A", "queryType": "range",
+                           "expr": 'sum by (service) (count_over_time({project="load-bench"}[$__auto]))',
+                           "legendFormat": "{{service}}"}],
+              "fieldConfig": {"defaults": {"custom": {"drawStyle": "bars", "fillOpacity": 60, "lineWidth": 1,
+                                                      "stacking": {"mode": "normal", "group": "A"}},
+                                           "color": {"mode": "palette-classic"}, "unit": "short"},
+                              "overrides": []},
+              "options": {"legend": {"displayMode": "list", "placement": "right", "showLegend": True},
+                          "tooltip": {"mode": "multi", "sort": "desc"}}}
+    L.add(volume, 24, 7)
+    L.add(logs("Logs", "Lines from the selected containers. Expand a runner line for a link to its trace.",
+               '{service=~"$service"}'), 24, 12)
+
+    containers = [s["name"] for s in SERVERS] + ["runner", "grafana", "prometheus", "loki", "tempo", "alloy",
+                                                 "beyla", "blackbox", "cadvisor"]
+    service = {"name": "service", "label": "Service", "type": "custom", "query": ",".join(containers),
+               "multi": True, "includeAll": True, "allValue": ".+", "hide": 0,
+               "current": {"selected": True, "text": ["All"], "value": ["$__all"]},
+               "options": [{"selected": False, "text": c, "value": c} for c in containers]}
+    return dashboard("internals", "Inside the Servers",
+                     "Requests, errors and duration from inside every server via eBPF, sampled traces and "
+                     "container logs.",
+                     L, [v_datasource(), service], ["overview", "ops"], refresh="30s",
+                     time_from="now-1h")
+
+
 def k6_official(path):
     """Keep the stock k6 dashboard as downloaded, but name it as such and give it the shared navigation."""
     dash = json.loads(path.read_text())
@@ -1065,6 +1372,24 @@ def stack():
              overrides=[{"matcher": {"id": "byFrameRefID", "options": "B"},
                          "properties": [prop("unit", "short"), prop("custom.axisPlacement", "right"),
                                         prop("color", {"mode": "fixed", "fixedColor": "red"})]}]), 12, 8)
+    L.row("Logs and traces pipeline")
+    L.add(ts("Log lines into Loki", "Lines per second Loki accepted from Alloy.",
+             t("sum(rate(loki_distributor_lines_received_total[$__rate_interval]))", "lines/s"), "short",
+             interval="1m"), 8, 7)
+    L.add(ts("Spans into Tempo", "Spans per second Tempo accepted, from Beyla's sampled server requests and "
+                                 "the runner.",
+             t("sum(rate(tempo_distributor_spans_received_total[$__rate_interval]))", "spans/s"), "short",
+             interval="1m"), 8, 7)
+    L.add(ts("Requests Beyla saw", "Requests per second across all servers, from eBPF. Every request counts, "
+                                   "not just the traced sample.",
+             t(f"sum(rate({RED}_count[$__rate_interval]))", "req/s"), "reqps", interval="1m"), 8, 7)
+
+    L.row("Runner logs and traces")
+    L.add(logs("Runner logs", "The load-test runner's JSON logs. Lines written during a test link to its trace.",
+               '{service="runner"}'), 12, 10)
+    L.add(traces("Runner traces", "Visitor requests and load tests. A load test's span covers the whole k6 run.",
+                 '{resource.service.name="runner"}'), 12, 10)
+
     L.row("Visitor load tests")
     L.add(ts("Visitor load tests", "Load tests started from the public /run/ page, by server and result.",
              t('sum by (server, result) (increase(o11y_runner_runs_total[$__rate_interval]))',
@@ -1079,6 +1404,53 @@ def stack():
                      L, [v_datasource()], ["ops", "self-monitoring"], refresh="30s", time_from="now-6h")
 
 
+# ---------------------------------------------------------------- beyla
+
+# Share of server requests Beyla keeps as traces. Its metrics count every request;
+# keeping every span of a 1500 req/s race would swamp Tempo on a small machine.
+TRACE_SAMPLE = 0.05
+
+
+def beyla_config():
+    """eBPF instrumentation for exactly the servers in servers.json, matched by their listen port."""
+    instrument = "".join(f"    - open_ports: {s['port']}\n      name: {s['name']}\n" for s in SERVERS)
+    return f"""# Generated by infra/grafana/generate.py from infra/servers.json; do not edit.
+# Beyla watches the servers through eBPF: no code changes, any language. Each server
+# listens on its own port (the same inside the container and on the host), which
+# is how Beyla tells them apart and leaves every other process alone.
+discovery:
+  instrument:
+{instrument}  exclude_instrument:
+    # Docker's port forwarder also holds the published ports on the host
+    - exe_path: "*docker-proxy*"
+
+# Observe only. Context propagation would rewrite the servers' outgoing traffic to
+# carry trace IDs (they make no outgoing calls), and the Node.js helper opens each
+# Node server's inspector to inject a script, which skews their benchmark.
+ebpf:
+  context_propagation: disabled
+nodejs:
+  enabled: false
+
+routes:
+  patterns: [/api/v1/health, /api/v1/docs, /api/v1/openapi.json]
+  unmatched: heuristic
+
+# RED metrics for every request, scraped by Prometheus
+prometheus_export:
+  port: 9400
+  path: /metrics
+  features: [application]
+
+# A sample of requests as traces, sent to Tempo
+otel_traces_export:
+  endpoint: http://tempo:4318
+  sampler:
+    name: traceidratio
+    arg: "{TRACE_SAMPLE}"
+"""
+
+
 # ---------------------------------------------------------------- write
 
 def write(rel, dash):
@@ -1089,17 +1461,20 @@ def write(rel, dash):
 
 
 def main():
-    targets = [{"targets": [f"http://{s['name']}:3000/api/v1/health"],
+    targets = [{"targets": [f"http://{s['name']}:{s['port']}/api/v1/health"],
                 "labels": {"server": s["name"], "language": s["language"], "framework": s["framework"]}}
                for s in SERVERS]
     (INFRA / "prometheus" / "targets.json").write_text(json.dumps(targets, indent=2) + "\n")
+    (INFRA / "beyla" / "beyla.yaml").write_text(beyla_config())
 
     written = [
         write("Fleet/fleet.json", fleet()),
         write("Fleet/compare.json", compare()),
         write("Fleet/leaderboard.json", leaderboard()),
         write("Fleet/compare-servers.json", compare_servers()),
+        write("Fleet/internals.json", internals()),
         write("Load Testing/live.json", live()),
+        write("Load Testing/match.json", head_to_head()),
         write("Load Testing/k6-prometheus.json", k6_official(DASHBOARDS / "Load Testing" / "k6-prometheus.json")),
         write("Infrastructure/host.json", host()),
         write("Infrastructure/containers.json", containers()),

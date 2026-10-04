@@ -128,7 +128,7 @@
         "enable": true,
         "hide": false,
         "iconColor": "rgba(255, 152, 48, 0.5)",
-        "expr": "count by (server, testid) (count_over_time(k6_vus[$__interval]))",
+        "expr": "count by (server, testid) (count_over_time(k6_http_reqs_total{group!~\"::setup|::teardown\"}[10s]))",
         "step": "5s",
         "titleFormat": "Load test on {{server}}",
         "textFormat": "{{testid}}",
@@ -169,7 +169,7 @@
       "url": "/run/",
       "icon": "bolt",
       "keepTime": false,
-      "targetBlank": false,
+      "targetBlank": true,
       "tooltip": "Start a load test against one server (one at a time)"
     },
     {
@@ -271,7 +271,8 @@
               }
             ]
           },
-          "mappings": []
+          "mappings": [],
+          "noValue": "No tests in range"
         },
         "overrides": []
       },
@@ -336,7 +337,8 @@
             ]
           },
           "mappings": [],
-          "decimals": 0
+          "decimals": 0,
+          "noValue": "No tests in range"
         },
         "overrides": []
       },
@@ -409,7 +411,8 @@
             ]
           },
           "mappings": [],
-          "decimals": 2
+          "decimals": 2,
+          "noValue": "No tests in range"
         },
         "overrides": []
       },
@@ -481,7 +484,8 @@
               }
             ]
           },
-          "mappings": []
+          "mappings": [],
+          "noValue": "No tests in range"
         },
         "overrides": []
       },
@@ -553,7 +557,8 @@
               }
             ]
           },
-          "mappings": []
+          "mappings": [],
+          "noValue": "No tests in range"
         },
         "overrides": []
       },
@@ -625,7 +630,8 @@
               }
             ]
           },
-          "mappings": []
+          "mappings": [],
+          "noValue": "No tests in range"
         },
         "overrides": []
       },
@@ -689,7 +695,8 @@
               }
             ]
           },
-          "mappings": []
+          "mappings": [],
+          "noValue": "No tests in range"
         },
         "overrides": []
       },
@@ -761,7 +768,8 @@
               }
             ]
           },
-          "mappings": []
+          "mappings": [],
+          "noValue": "No tests in range"
         },
         "overrides": []
       },
@@ -1712,6 +1720,94 @@
     },
     {
       "type": "timeseries",
+      "title": "p99 inside the server",
+      "description": "The servers' own 99th-percentile response time, from eBPF (Beyla). Compare with k6's p99 above: the gap is network and queueing.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le, service_name) (rate(http_server_request_duration_seconds_bucket{service_name=~\"$server\"}[$__rate_interval])))",
+          "legendFormat": "{{service_name}}",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": 15000,
+            "axisSoftMin": 0,
+            "gradientMode": "opacity",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 23,
+      "gridPos": {
+        "x": 16,
+        "y": 41,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
       "title": "Host CPU per core",
       "description": "A single core pinned near 100% points to a single-threaded server.",
       "datasource": {
@@ -1776,12 +1872,12 @@
         }
       },
       "interval": "15s",
-      "id": 23,
+      "id": 24,
       "gridPos": {
-        "x": 16,
-        "y": 41,
-        "w": 8,
-        "h": 8
+        "x": 0,
+        "y": 49,
+        "w": 24,
+        "h": 7
       }
     }
   ]

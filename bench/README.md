@@ -71,9 +71,10 @@ cd bench/k6
 SERVER=axum npm run load:grafana
 SERVER=django RATE=500 npm run load:grafana
 SERVER=fiber TESTID=fiber-gc-tuned npm run break:grafana
+SERVERS=go,bun,axum RATE=500 npm run match:grafana   # race 2-3 servers at once
 ```
 
-`grafana.sh` looks the port up in `infra/servers.json`, reads the server's name from its health endpoint, and tags every metric with `server`, `script` and `testid` (default `<server>-<script>-<timestamp>`). `URL`, `HOST` and `PORTS` still work for servers started by hand. Watch the run in **Load Testing → Live Load Test** at <http://localhost:3120>; afterwards it appears on the server's own dashboard and in **Fleet → Run Comparison**.
+`grafana.sh` looks the port up in `infra/servers.json`, reads the server's name from its health endpoint, and tags every metric with `server`, `script` and `testid` (default `<server>-<script>-<timestamp>`). `URL`, `HOST` and `PORTS` still work for servers started by hand. Watch the run in **Load Testing → Live Load Test** at <http://localhost:3120>; afterwards it appears on the server's own dashboard and in **Fleet → Run Comparison**. A race (`match`) shows on **Load Testing → Head to Head**; `match.ts` tags each server's requests with its own `server` and `testid` plus a shared `match` id.
 
 ## Fair comparisons
 

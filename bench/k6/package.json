@@ -7,6 +7,8 @@
     "load:grafana": "./grafana.sh load",
     "break": "k6 run src/break.ts",
     "break:grafana": "./grafana.sh break",
+    "match": "k6 run src/match.ts",
+    "match:grafana": "./grafana.sh match",
     "typecheck": "tsc"
   },
   "devDependencies": {

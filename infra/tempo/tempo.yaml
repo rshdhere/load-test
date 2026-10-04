@@ -1,0 +1,36 @@
+# Single-process Tempo for traces: Beyla's eBPF spans from the servers and the
+# runner's own spans, both over OTLP.
+server:
+  http_listen_port: 3200
+  log_level: warn
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal
+
+# Keep traces for 3 days. Tempo 3 plans compaction and retention in the backend
+# scheduler and runs them in the backend worker; both read the retention.
+backend_scheduler:
+  provider:
+    compaction:
+      compaction:
+        block_retention: 72h
+backend_worker:
+  compaction:
+    block_retention: 72h
+
+usage_report:
+  reporting_enabled: false

@@ -1,11 +1,10 @@
 {
-  "uid": "compare-servers",
-  "title": "Compare servers",
-  "description": "Pick two or more servers to see their health, load-test results and resources side by side.",
+  "uid": "internals",
+  "title": "Inside the Servers",
+  "description": "Requests, errors and duration from inside every server via eBPF, sampled traces and container logs.",
   "tags": [
     "overview",
-    "comparison",
-    "resources"
+    "ops"
   ],
   "editable": false,
   "graphTooltip": 1,
@@ -16,7 +15,7 @@
   "timezone": "browser",
   "fiscalYearStartMonth": 0,
   "time": {
-    "from": "now-24h",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {
@@ -43,22 +42,21 @@
         "refresh": 1
       },
       {
-        "name": "server",
-        "label": "Servers",
+        "name": "service",
+        "label": "Service",
         "type": "custom",
-        "query": "actix,axum,tokio,go,gin,fiber,fastapi,flask,django,bun,node,express,fastify",
+        "query": "actix,axum,tokio,go,gin,fiber,fastapi,flask,django,bun,node,express,fastify,runner,grafana,prometheus,loki,tempo,alloy,beyla,blackbox,cadvisor",
         "multi": true,
-        "includeAll": false,
+        "includeAll": true,
+        "allValue": ".+",
         "hide": 0,
         "current": {
           "selected": true,
           "text": [
-            "go",
-            "bun"
+            "All"
           ],
           "value": [
-            "go",
-            "bun"
+            "$__all"
           ]
         },
         "options": [
@@ -78,7 +76,7 @@
             "value": "tokio"
           },
           {
-            "selected": true,
+            "selected": false,
             "text": "go",
             "value": "go"
           },
@@ -108,7 +106,7 @@
             "value": "django"
           },
           {
-            "selected": true,
+            "selected": false,
             "text": "bun",
             "value": "bun"
           },
@@ -126,6 +124,51 @@
             "selected": false,
             "text": "fastify",
             "value": "fastify"
+          },
+          {
+            "selected": false,
+            "text": "runner",
+            "value": "runner"
+          },
+          {
+            "selected": false,
+            "text": "grafana",
+            "value": "grafana"
+          },
+          {
+            "selected": false,
+            "text": "prometheus",
+            "value": "prometheus"
+          },
+          {
+            "selected": false,
+            "text": "loki",
+            "value": "loki"
+          },
+          {
+            "selected": false,
+            "text": "tempo",
+            "value": "tempo"
+          },
+          {
+            "selected": false,
+            "text": "alloy",
+            "value": "alloy"
+          },
+          {
+            "selected": false,
+            "text": "beyla",
+            "value": "beyla"
+          },
+          {
+            "selected": false,
+            "text": "blackbox",
+            "value": "blackbox"
+          },
+          {
+            "selected": false,
+            "text": "cadvisor",
+            "value": "cadvisor"
           }
         ]
       }
@@ -249,22 +292,41 @@
   ],
   "panels": [
     {
-      "type": "row",
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "options": {
+        "mode": "markdown",
+        "content": "### Inside the servers\nk6 shows what a client sees. This page shows what the **servers** saw: every request counted by [Beyla](https://grafana.com/oss/beyla-ebpf/) through eBPF, without touching their code, a 5% sample of requests as traces in Tempo, and every container's logs in Loki. Click a trace ID for the trace, or a log line's trace link to jump from logs to traces.",
+        "code": {
+          "language": "plaintext"
+        }
+      },
       "id": 1,
-      "title": "At a glance \u00b7 one column per selected server",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      }
+    },
+    {
+      "type": "row",
+      "id": 2,
+      "title": "Requests, errors and duration (RED)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 0,
+        "y": 3,
         "w": 24,
         "h": 1
       }
     },
     {
-      "type": "stat",
-      "title": "$server",
-      "description": "Health right now, availability and best load-test results over the time range, and resources right now.",
+      "type": "table",
+      "title": "Every server, from the inside",
+      "description": "Requests each server answered over the time range, measured in the kernel by Beyla. Click a server for its dashboard.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -275,73 +337,96 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "probe_success{job=\"server-health\",server=\"$server\"}",
-          "legendFormat": "Status",
+          "expr": "sum by (service_name) (rate(http_server_request_duration_seconds_count{service_name=~\"$service\"}[$__range]))",
+          "legendFormat": "",
           "refId": "A",
           "range": false,
-          "instant": true
+          "instant": true,
+          "format": "table"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "avg_over_time(probe_success{job=\"server-health\",server=\"$server\"}[$__range])",
-          "legendFormat": "Availability",
+          "expr": "sum by (service_name) (increase(http_server_request_duration_seconds_count{service_name=~\"$service\"}[$__range]))",
+          "legendFormat": "",
           "refId": "B",
           "range": false,
-          "instant": true
+          "instant": true,
+          "format": "table"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max_over_time((sum(rate(k6_http_reqs_total{group!~\"::setup|::teardown\",server=\"$server\"}[5s])))[$__range:1s])",
-          "legendFormat": "Peak req/s",
+          "expr": "(sum by (service_name) (rate(http_server_request_duration_seconds_count{service_name=~\"$service\",http_response_status_code=~\"5..\"}[$__range])) or sum by (service_name) (rate(http_server_request_duration_seconds_count{service_name=~\"$service\"}[$__range])) * 0) / sum by (service_name) (rate(http_server_request_duration_seconds_count{service_name=~\"$service\"}[$__range]))",
+          "legendFormat": "",
           "refId": "C",
           "range": false,
-          "instant": true
+          "instant": true,
+          "format": "table"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "quantile_over_time(0.5, (max(k6_http_req_duration_p99{group!~\"::setup|::teardown\",server=\"$server\"}))[$__range:2s])",
-          "legendFormat": "Typical p99",
+          "expr": "histogram_quantile(0.5, sum by (le, service_name) (rate(http_server_request_duration_seconds_bucket{service_name=~\"$service\"}[$__range])))",
+          "legendFormat": "",
           "refId": "D",
           "range": false,
-          "instant": true
+          "instant": true,
+          "format": "table"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service=\"$server\"}[1m]))",
-          "legendFormat": "CPU",
+          "expr": "histogram_quantile(0.99, sum by (le, service_name) (rate(http_server_request_duration_seconds_bucket{service_name=~\"$service\"}[$__range])))",
+          "legendFormat": "",
           "refId": "E",
           "range": false,
-          "instant": true
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum(container_memory_working_set_bytes{container_label_com_docker_compose_service=\"$server\"})",
-          "legendFormat": "Memory",
-          "refId": "F",
-          "range": false,
-          "instant": true
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "service_name": 0
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Value #E"
+              }
+            ]
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "thresholds"
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
           },
           "thresholds": {
             "mode": "absolute",
@@ -351,116 +436,132 @@
                 "value": null
               }
             ]
-          },
-          "mappings": [],
-          "noValue": "No tests in range"
+          }
         },
         "overrides": [
           {
             "matcher": {
-              "id": "byFrameRefID",
-              "options": "A"
+              "id": "byName",
+              "options": "service_name"
             },
             "properties": [
               {
-                "id": "mappings",
+                "id": "displayName",
+                "value": "Server"
+              },
+              {
+                "id": "links",
                 "value": [
                   {
-                    "type": "value",
-                    "options": {
-                      "0": {
-                        "text": "DOWN",
-                        "color": "red",
-                        "index": 0
-                      },
-                      "1": {
-                        "text": "UP",
-                        "color": "green",
-                        "index": 1
-                      }
-                    }
+                    "title": "Open ${__value.raw} dashboard",
+                    "url": "/d/server-${__value.raw}?${__url_time_range}"
                   }
                 ]
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "red",
-                      "value": null
-                    },
-                    {
-                      "color": "green",
-                      "value": 1
-                    }
-                  ]
-                }
               }
             ]
           },
           {
             "matcher": {
-              "id": "byFrameRefID",
-              "options": "B"
+              "id": "byName",
+              "options": "Value #A"
             },
             "properties": [
               {
-                "id": "unit",
-                "value": "percentunit"
+                "id": "displayName",
+                "value": "Avg req/s"
               },
-              {
-                "id": "decimals",
-                "value": 3
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "red",
-                      "value": null
-                    },
-                    {
-                      "color": "orange",
-                      "value": 0.99
-                    },
-                    {
-                      "color": "green",
-                      "value": 0.999
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "C"
-            },
-            "properties": [
               {
                 "id": "unit",
                 "value": "reqps"
               },
               {
                 "id": "decimals",
-                "value": 0
+                "value": 1
               }
             ]
           },
           {
             "matcher": {
-              "id": "byFrameRefID",
-              "options": "D"
+              "id": "byName",
+              "options": "Value #B"
             },
             "properties": [
               {
+                "id": "displayName",
+                "value": "Requests"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #C"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "5xx"
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.01
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.02
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #D"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "p50"
+              },
+              {
                 "id": "unit",
                 "value": "s"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
               },
               {
                 "id": "thresholds",
@@ -486,84 +587,67 @@
           },
           {
             "matcher": {
-              "id": "byFrameRefID",
-              "options": "E"
+              "id": "byName",
+              "options": "Value #E"
             },
             "properties": [
               {
-                "id": "unit",
-                "value": "percentunit"
+                "id": "displayName",
+                "value": "p99"
               },
               {
-                "id": "decimals",
-                "value": 1
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "F"
-            },
-            "properties": [
-              {
                 "id": "unit",
-                "value": "bytes"
+                "value": "s"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.1
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.5
+                    }
+                  ]
+                }
               }
             ]
           }
         ]
       },
       "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "orientation": "horizontal",
-        "wideLayout": true,
-        "showPercentChange": false
-      },
-      "repeat": "server",
-      "repeatDirection": "h",
-      "maxPerRow": 4,
-      "links": [
-        {
-          "title": "Open the ${server} dashboard",
-          "url": "/d/server-${server}?${__url_time_range}"
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
         }
-      ],
-      "id": 2,
-      "gridPos": {
-        "x": 0,
-        "y": 1,
-        "w": 24,
-        "h": 10
-      }
-    },
-    {
-      "type": "row",
+      },
       "id": 3,
-      "title": "Load tests \u00b7 selected servers overlaid",
-      "collapsed": false,
-      "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 11,
+        "y": 4,
         "w": 24,
-        "h": 1
+        "h": 12
       }
     },
     {
       "type": "timeseries",
       "title": "Requests per second",
-      "description": "k6 request rate against each selected server.",
+      "description": "Requests each server answered.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -574,8 +658,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (server) (rate(k6_http_reqs_total{group!~\"::setup|::teardown\",server=~\"$server\"}[$__rate_interval]))",
-          "legendFormat": "{{server}}",
+          "expr": "sum by (service_name) (rate(http_server_request_duration_seconds_count{service_name=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "{{service_name}}",
           "refId": "A",
           "range": true,
           "instant": false
@@ -604,7 +688,25 @@
             "mode": "palette-classic"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "number"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open ${__field.labels.service_name} dashboard",
+                    "url": "/d/server-${__field.labels.service_name}?${__url_time_range}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -626,15 +728,15 @@
       "id": 4,
       "gridPos": {
         "x": 0,
-        "y": 12,
-        "w": 12,
+        "y": 16,
+        "w": 8,
         "h": 9
       }
     },
     {
       "type": "timeseries",
-      "title": "p99 latency",
-      "description": "Per-window p99 request duration for each selected server.",
+      "title": "5xx share",
+      "description": "Share of each server's responses that were server errors.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -645,8 +747,98 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max by (server) (k6_http_req_duration_p99{group!~\"::setup|::teardown\",server=~\"$server\"})",
-          "legendFormat": "{{server}}",
+          "expr": "(sum by (service_name) (rate(http_server_request_duration_seconds_count{service_name=~\"$service\",http_response_status_code=~\"5..\"}[$__rate_interval])) or sum by (service_name) (rate(http_server_request_duration_seconds_count{service_name=~\"$service\"}[$__rate_interval])) * 0) / sum by (service_name) (rate(http_server_request_duration_seconds_count{service_name=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "{{service_name}}",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": 15000,
+            "axisSoftMin": 0,
+            "gradientMode": "opacity",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "line+area"
+            },
+            "axisSoftMax": 0.05
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.02
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 8,
+        "y": 16,
+        "w": 8,
+        "h": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "p99 inside the server",
+      "description": "Each server's 99th-percentile time from request in to response out.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le, service_name) (rate(http_server_request_duration_seconds_bucket{service_name=~\"$service\"}[$__rate_interval])))",
+          "legendFormat": "{{service_name}}",
           "refId": "A",
           "range": true,
           "instant": false
@@ -711,243 +903,224 @@
           "sort": "desc"
         }
       },
-      "id": 5,
+      "id": 6,
       "gridPos": {
-        "x": 12,
-        "y": 12,
-        "w": 12,
+        "x": 16,
+        "y": 16,
+        "w": 8,
         "h": 9
       }
     },
     {
       "type": "row",
-      "id": 6,
-      "title": "Resources \u00b7 selected servers overlaid",
+      "id": 7,
+      "title": "Traces",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 21,
+        "y": 25,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "table",
+      "title": "Slowest recent requests",
+      "description": "Sampled requests slower than 50 ms, from the selected servers.",
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "traceql",
+          "query": "{resource.service.name=~\"$service\" && duration > 50ms}",
+          "limit": 20,
+          "tableType": "traces",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 8,
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 12,
+        "h": 10
+      }
+    },
+    {
+      "type": "table",
+      "title": "Recent requests",
+      "description": "The latest sampled requests from the selected servers.",
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "traceql",
+          "query": "{resource.service.name=~\"$service\"}",
+          "limit": 20,
+          "tableType": "traces",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 9,
+      "gridPos": {
+        "x": 12,
+        "y": 26,
+        "w": 12,
+        "h": 10
+      }
+    },
+    {
+      "type": "row",
+      "id": 10,
+      "title": "Logs",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 36,
         "w": 24,
         "h": 1
       }
     },
     {
       "type": "timeseries",
-      "title": "CPU",
-      "description": "CPU as a share of one core (200% = 2 cores).",
+      "title": "Log lines by container",
+      "description": "Lines per second each container wrote, from Loki.",
       "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
+        "type": "loki",
+        "uid": "loki"
       },
       "targets": [
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
+            "type": "loki",
+            "uid": "loki"
           },
-          "expr": "sum by (server) (label_replace(rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service=~\"$server\"}[$__rate_interval]), \"server\", \"$1\", \"container_label_com_docker_compose_service\", \"(.*)\"))",
-          "legendFormat": "{{server}}",
           "refId": "A",
-          "range": true,
-          "instant": false
+          "queryType": "range",
+          "expr": "sum by (service) (count_over_time({project=\"load-bench\"}[$__auto]))",
+          "legendFormat": "{{service}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
           "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": 15000,
-            "axisSoftMin": 0,
-            "gradientMode": "opacity",
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "lineWidth": 1,
             "stacking": {
-              "mode": "none",
+              "mode": "normal",
               "group": "A"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
             }
           },
           "color": {
             "mode": "palette-classic"
           },
-          "min": 0
+          "unit": "short"
         },
         "overrides": []
       },
       "options": {
         "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "showLegend": true,
-          "sortBy": "Max",
-          "sortDesc": true
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "interval": "15s",
-      "id": 7,
+      "id": 11,
       "gridPos": {
         "x": 0,
-        "y": 22,
-        "w": 8,
-        "h": 8
+        "y": 37,
+        "w": 24,
+        "h": 7
       }
     },
     {
-      "type": "timeseries",
-      "title": "Memory",
-      "description": "Working-set memory.",
+      "type": "logs",
+      "title": "Logs",
+      "description": "Lines from the selected containers. Expand a runner line for a link to its trace.",
       "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
+        "type": "loki",
+        "uid": "loki"
       },
       "targets": [
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
+            "type": "loki",
+            "uid": "loki"
           },
-          "expr": "sum by (server) (label_replace(container_memory_working_set_bytes{container_label_com_docker_compose_service=~\"$server\"}, \"server\", \"$1\", \"container_label_com_docker_compose_service\", \"(.*)\"))",
-          "legendFormat": "{{server}}",
+          "expr": "{service=~\"$service\"}",
           "refId": "A",
-          "range": true,
-          "instant": false
+          "queryType": "range"
         }
       ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": 15000,
-            "axisSoftMin": 0,
-            "gradientMode": "opacity",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "color": {
-            "mode": "palette-classic"
-          },
-          "min": 0
-        },
-        "overrides": []
-      },
       "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "showLegend": true,
-          "sortBy": "Max",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
+        "showTime": true,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "prettifyLogMessage": false
       },
-      "interval": "15s",
-      "id": 8,
+      "id": 12,
       "gridPos": {
-        "x": 8,
-        "y": 22,
-        "w": 8,
-        "h": 8
-      }
-    },
-    {
-      "type": "timeseries",
-      "title": "Health check latency",
-      "description": "Time for each /api/v1/health check to complete.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "max by (server) (probe_duration_seconds{job=\"server-health\",server=~\"$server\"})",
-          "legendFormat": "{{server}}",
-          "refId": "A",
-          "range": true,
-          "instant": false
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 0,
-            "showPoints": "never",
-            "spanNulls": 15000,
-            "axisSoftMin": 0,
-            "gradientMode": "opacity",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "showLegend": true,
-          "sortBy": "Max",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "interval": "15s",
-      "id": 9,
-      "gridPos": {
-        "x": 16,
-        "y": 22,
-        "w": 8,
-        "h": 8
+        "x": 0,
+        "y": 44,
+        "w": 24,
+        "h": 12
       }
     }
   ]
