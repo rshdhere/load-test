@@ -227,6 +227,47 @@ def red_errors(sel, by="", window="$__rate_interval"):
     return f"({failed} or {total} * 0) / {total}"
 
 
+def route_table(title, desc, sel, by_service=False):
+    """Per route (and per server when by_service) as each server saw it: rate, 4xx and 5xx shares, p50, p99."""
+    by = ("service_name, " if by_service else "") + "http_request_method, http_route"
+    total = f"sum by ({by}) (rate({RED}_count{{{sel}}}[$__range]))"
+    share = lambda codes: (f'(sum by ({by}) (rate({RED}_count{{{sel},http_response_status_code=~"{codes}"}}'
+                           f'[$__range])) or {total} * 0) / {total}')
+    cols = [("A", total, "Avg req/s", "reqps"), ("B", share("4.."), "4xx", "percentunit"),
+            ("C", share("5.."), "5xx", "percentunit"),
+            ("D", red_quantile(0.5, sel, by, "$__range"), "p50", "s"),
+            ("E", red_quantile(0.99, sel, by, "$__range"), "p99", "s")]
+    overrides = [by_name("service_name", prop("displayName", "Server"), server_link()),
+                 by_name("http_request_method", prop("displayName", "Method"), prop("custom.width", 90)),
+                 by_name("http_route", prop("displayName", "Route"))]
+    for ref, _, name, unit in cols:
+        props = [prop("displayName", name), prop("unit", unit)]
+        if unit == "s":
+            props += [prop("custom.cellOptions", {"type": "color-text"}), prop("thresholds", LAT_TH)]
+        if name == "5xx":
+            props += [prop("custom.cellOptions", {"type": "color-background", "mode": "basic"}),
+                      prop("thresholds", ERR_TH)]
+        props += [prop("decimals", 1 if unit == "reqps" else 2)]
+        overrides.append(by_name(f"Value #{ref}", *props))
+    order = {"http_request_method": 1, "http_route": 2}
+    if by_service:
+        order = {"service_name": 0, "http_request_method": 2, "http_route": 3}
+    return {"type": "table", "title": title, "description": desc, "datasource": DS,
+            "targets": [t(e, ref=r, instant=True, table=True) for r, e, _, _ in cols],
+            "transformations": [{"id": "merge", "options": {}},
+                                {"id": "organize", "options": {"excludeByName": {"Time": True},
+                                                               "indexByName": order}},
+                                {"id": "sortBy", "options": {"sort": [{"field": "Value #A", "desc": True}]}}],
+            "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}},
+                                         "thresholds": BLUE},
+                            "overrides": overrides},
+            "options": {"showHeader": True, "cellHeight": "sm", "footer": {"show": False}}}
+
+
+# k6 requests are named by operation (bench/k6/src/workload.ts); setup's probes are not part of the load
+K6_OPS = 'name!~"probe|pick-live",group!~"::setup|::teardown"'
+
+
 def by_name(name, *props):
     return {"matcher": {"id": "byName", "options": name}, "properties": list(props)}
 
@@ -662,6 +703,18 @@ def server_dashboard(s):
               t(f'max(k6_http_req_duration_p99{{server="{name}",group!~"::setup|::teardown"}})', "k6 p99", "C")],
              "s", fill=0, overrides=[by_name("k6 p99", *dashed("orange"))]), 12, 8)
 
+    L.row("Todo API · by route and operation")
+    L.add(route_table("Routes, inside the server", "Each route as the server saw it over the time range, from "
+                                                   "eBPF. 4xx are mostly the load test's deliberate bad requests "
+                                                   "and todos dropped by the 1000-todo cap.", beyla), 24, 8)
+    L.add(ts("p99 per route, inside the server", "Each route's 99th-percentile time inside the server (Beyla).",
+             t(red_quantile(0.99, beyla, "http_request_method, http_route"),
+               "{{http_request_method}} {{http_route}}"), "s", fill=0), 12, 8)
+    L.add(ts("p99 per operation, at the client", "Each k6 operation's per-window p99, as k6 measured it: "
+                                                 "includes the network and queueing.",
+             t(f'max by (name) (k6_http_req_duration_p99{{server="{name}",{K6_OPS}}})', "{{name}}"), "s",
+             fill=0), 12, 8)
+
     L.row("Logs and traces")
     L.add(logs("Logs", f"Everything the {s['title']} container writes, shipped to Loki by Alloy.",
                f'{{service="{name}"}}'), 12, 10)
@@ -1043,6 +1096,20 @@ def head_to_head():
                            "overrides": overrides},
            "options": {"showHeader": True, "cellHeight": "md", "footer": {"show": False}}}, 24, 6)
 
+    ops = {"type": "table", "title": "Per operation",
+           "description": "Each racer's typical p99 per operation (median of 1s windows), as k6 measured it.",
+           "datasource": DS,
+           "targets": [t(f"quantile_over_time(0.5, (max by (server, name) (k6_http_req_duration_p99{{{M},{K6_OPS}}}))"
+                         f"[$__range:2s])", ref="A", instant=True, table=True)],
+           "transformations": [{"id": "groupingToMatrix", "options": {"columnField": "server", "rowField": "name",
+                                                                      "valueField": "Value"}}],
+           "fieldConfig": {"defaults": {"unit": "s", "thresholds": LAT_TH,
+                                        "custom": {"align": "auto", "cellOptions": {"type": "color-text"}}},
+                           "overrides": [by_name("name\\server", prop("displayName", "Operation"),
+                                                 prop("unit", "none"), prop("custom.width", 300))]},
+           "options": {"showHeader": True, "cellHeight": "sm", "footer": {"show": False}}}
+    L.add(ops, 24, 8)
+
     L.row("The race, second by second")
     L.add(ts("Requests per second", "Each server's throughput. A line that falls below the others means that "
                                     "server could not keep up and k6 dropped requests.",
@@ -1146,6 +1213,10 @@ def internals():
     L.add(ts("p99 inside the server", "Each server's 99th-percentile time from request in to response out.",
              t(red_quantile(0.99, sel, "service_name"), "{{service_name}}"), "s", th=LAT_TH, th_style="dashed"),
           8, 9)
+
+    L.add(route_table("Every route, every server", "The same, split by route: where each server spends its "
+                                                   "time and which requests it rejects.", sel, by_service=True),
+          24, 12)
 
     L.row("Traces")
     L.add(traces("Slowest recent requests", "Sampled server requests slower than 5 ms, from the selected "
@@ -1414,6 +1485,10 @@ def stack():
 
 # ---------------------------------------------------------------- beyla
 
+# Routes Beyla groups requests under, so each todo id does not become its own series.
+# Written as a JSON array: unquoted, YAML would read {id} as a map.
+ROUTES = ["/api/v1/health", "/api/v1/docs", "/api/v1/openapi.json", "/api/v1/todos", "/api/v1/todos/{id}"]
+
 # Share of server requests Beyla keeps as traces. Its metrics count every request;
 # keeping every span of a 1500 req/s race would swamp Tempo on a small machine.
 TRACE_SAMPLE = 0.05
@@ -1441,7 +1516,7 @@ nodejs:
   enabled: false
 
 routes:
-  patterns: [/api/v1/health, /api/v1/docs, /api/v1/openapi.json]
+  patterns: {json.dumps(ROUTES)}
   unmatched: heuristic
 
 # RED metrics for every request, scraped by Prometheus. These servers answer in well

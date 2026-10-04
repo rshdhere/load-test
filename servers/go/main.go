@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -26,8 +27,6 @@ const docsHTML = `<!doctype html>
     </script>
   </body>
 </html>`
-
-var notFoundJSON = []byte(`{"error":"Not Found"}`)
 
 type health struct {
 	Status string  `json:"status"`
@@ -57,7 +56,19 @@ func main() {
 		log.Fatalf("failed to read openapi spec (run from servers/go or set SPEC_PATH): %v", err)
 	}
 
+	todos := newStore()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch path := r.URL.Path; {
+		case path == "/api/v1/todos" && r.Method == http.MethodGet:
+			todos.list(w, r)
+			return
+		case path == "/api/v1/todos" && r.Method == http.MethodPost:
+			todos.createHandler(w, r)
+			return
+		case strings.HasPrefix(path, "/api/v1/todos/"):
+			todos.item(w, r, strings.TrimPrefix(path, "/api/v1/todos/"))
+			return
+		}
 		if r.Method == http.MethodGet {
 			switch r.URL.Path {
 			case "/api/v1/health":
@@ -74,9 +85,7 @@ func main() {
 				return
 			}
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		w.Write(notFoundJSON)
+		writeError(w, r, http.StatusNotFound, "Not Found")
 	})
 
 	addr := fmt.Sprintf("0.0.0.0:%d", port)

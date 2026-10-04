@@ -2,6 +2,10 @@
 
 k6 scripts that load-test the servers in [`../servers`](../servers). Every server implements the same contract ([`../servers/openapi.json`](../servers/openapi.json)), so any script can run against any server.
 
+Each iteration is a todo-app request mix ([`k6/src/workload.ts`](k6/src/workload.ts)): 35% list, 25% read one, 15% create, 12% update, 5% delete, 3% list done todos, plus 3% deliberately invalid creates (400) and 2% reads of a missing todo (404). The expected 4xx answers, and 404s for todos the server has already dropped (it keeps 1000), count as successes, so error rates only show real failures. Requests are named by route (`GET /api/v1/todos/{id}`) and k6's `url` tag is dropped, so todo ids do not create a metric series each. A server that does not serve the todo API yet gets health checks instead.
+
+Check a server against the contract with `python3 servers/conformance.py http://localhost:<port>` (it fills the store, so not against a live server).
+
 ## Layout
 
 ```
@@ -11,6 +15,8 @@ bench/
 │   └── src/
 │       ├── load.ts        constant request rate for a fixed duration
 │       ├── break.ts       ramps 0 → 200 → 500 → 1000 → 0 VUs to find the breaking point
+│       ├── match.ts       a race: the same rate against 2-3 servers at once
+│       ├── workload.ts    what one iteration does: the todo-app request mix
 │       ├── pick-live.ts   finds a live server via /api/v1/health before the test starts
 │       └── summary.ts     prints a short summary and saves each run to ../results
 └── results/               one JSON file per run
