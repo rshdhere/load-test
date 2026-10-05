@@ -30,6 +30,8 @@ export function summarize(script: string) {
       env: {
         rate: __ENV.RATE ?? null,
         duration: __ENV.DURATION ?? null,
+        shape: __ENV.SHAPE || 'steady',
+        mix: __ENV.MIX || 'reads',
         encoding: __ENV.ENCODING || 'identity',
       },
       requests: m.http_reqs?.values.count ?? 0,

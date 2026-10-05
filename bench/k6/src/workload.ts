@@ -21,17 +21,15 @@ export function probe(healthUrl: string): Api {
   return { base, todos: res.status === 200 }
 }
 
-// Share of iterations per operation, out of 100
-const MIX: [number, Op][] = [
-  [35, list],
-  [25, read],
-  [15, create],
-  [12, update],
-  [5, remove],
-  [3, listDone],
-  [3, createInvalid],
-  [2, readMissing],
-]
+// Request mixes a test can use: share of iterations per operation, out of 100.
+// "health" is the framework's bare overhead, with no todo logic at all.
+export const MIXES = {
+  reads: [[35, list], [25, read], [15, create], [12, update], [5, remove], [3, listDone], [3, createInvalid],
+    [2, readMissing]],
+  writes: [[30, create], [25, update], [15, remove], [15, list], [10, read], [3, createInvalid], [2, readMissing]],
+  health: [],
+} satisfies Record<string, [number, Op][]>
+export type Mix = keyof typeof MIXES
 type Op = (base: string) => void
 
 // Todos this VU created and has not deleted. Each VU has its own copy of this
@@ -103,15 +101,16 @@ function readMissing(base: string) {
   verify(http.get(`${base}/api/v1/todos/999999999`, expect([404], 'GET /api/v1/todos/{id} (missing)')), [404])
 }
 
-/** One iteration against a server. */
-export function exercise(api: Api) {
-  if (!api.todos) {
+/** One iteration against a server, with the given mix (health checks for servers without the todo API). */
+export function exercise(api: Api, mix: Mix = 'reads') {
+  const ops: [number, Op][] = MIXES[mix]
+  if (!api.todos || ops.length === 0) {
     const res = http.get(`${api.base}/api/v1/health`, { ...reqParams, tags: { name: 'GET /api/v1/health' } })
     check(res, { 'status 200': (r) => r.status === 200, 'got a response': (r) => r.status !== 0 })
     return
   }
   let roll = Math.random() * 100
-  for (const [weight, op] of MIX) {
+  for (const [weight, op] of ops) {
     roll -= weight
     if (roll < 0) return op(api.base)
   }
