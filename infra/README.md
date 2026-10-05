@@ -53,14 +53,15 @@ Tags cut across the folders: `overview`, `comparison`, `live`, `load-testing`, `
 
 Every server dashboard and the fleet overview link to **Run a load test** (`/run/<server>`). A visitor picks a server, presses one button, and lands on the Live Load Test dashboard filtered to their run.
 
-**Head to head** (`/run/compare`) races 2 or 3 servers: `bench/k6/src/match.ts` sends each the same rate (`RUNNER_MATCH_RATE`, default `RUNNER_RATE`) at the same time, one k6 scenario per server, and the visitor lands on the **Head to Head** dashboard. Each server's requests are also tagged as their own run, so a race shows up on the racers' dashboards and in Run Comparison. Since the racers share the machine, a CPU-hungry server can slow the others; the pages say so.
+**Head to head** (`/run/compare`) races 2 or 3 servers: `bench/k6/src/match.ts` sends each the same load at the same time, one k6 scenario per server, and the visitor lands on the **Head to Head** dashboard. Each server's requests are also tagged as their own run, so a race shows up on the racers' dashboards and in Run Comparison. Since the racers share the machine, a CPU-hungry server can slow the others; the pages say so.
 
 Guard rails keep the VPS healthy:
 
 - **One test at a time** across the whole site; other servers' pages show the running test with a link to watch it.
 - **Cooldown** after each test (`RUNNER_COOLDOWN`, default 60s).
 - **Per-visitor limit** (`RUNNER_PER_IP_HOURLY`, default 3 per hour), keyed on the client IP nginx sees.
-- **Fixed test settings** from `.env` (`RUNNER_SCRIPT`, `RUNNER_RATE`, `RUNNER_MATCH_RATE`, `RUNNER_DURATION`); visitors only choose the servers, from `servers.json`. A race counts as one test.
+- **Settings from fixed menus.** Visitors pick the servers (from `servers.json`), a shape (steady, ramp to the peak, or a spike), a peak rate per server (`RUNNER_RATES`), a duration (`RUNNER_DURATIONS`) and a request mix (mostly reads, write-heavy, or health checks only). The runner accepts only exact menu values, refuses tests over `RUNNER_MAX_TOTAL_RATE` requests per second across all servers (a 2-way race at 1000 counts as 2000). Generating load costs CPU too: k6 needs roughly one core per 1500 req/s, on the same 2-core machine as the servers and other sites, so the default budget is 2000, and passes the settings to k6, which checks them again (`bench/k6/src/settings.ts`). Every metric is tagged with `shape`, `mix` and `rate`, and Run Comparison shows them. A race counts as one test.
+- **Memory cap.** k6 runs inside the runner container, which is limited to 768 MB, and k6's virtual users are capped to fit; a test that needs more drops requests (visible as dropped iterations) instead of starving the machine.
 - **Same-site form posts only**, so other websites cannot start tests (CSRF).
 
 The runner's metrics (`o11y_runner_*`) show whether a test is running on the Fleet Overview, and runs and turned-away requests by reason on **Infrastructure → Observability Stack**. nginx returns 404 for `/metrics`, so neither the runner's nor Grafana's metrics are public.
@@ -168,11 +169,12 @@ Anonymous visitors can view every dashboard and start rate-limited load tests, b
 | `O11Y_URL`                | `http://localhost:3120`  | Grafana's public URL, used in links; `https://o11y.raashed.com` on the VPS |
 | `GRAFANA_COOKIE_SECURE`   | `false`                  | Set `true` behind HTTPS                                          |
 | `WORKERS`                 | `2`                      | Workers/threads for every server (Rust, Go, Python), so they compete on equal terms |
-| `RUNNER_SCRIPT`           | `load`                   | Visitor test: `load` (constant rate) or `break` (ramp to 1000 VUs, 60s) |
-| `RUNNER_RATE`             | `500`                    | Requests per second for the `load` script                        |
-| `RUNNER_DURATION`         | `30s`                    | Length of the `load` script                                      |
+| `RUNNER_RATES`            | `100,250,500,1000,2000`  | Peak rates per server visitors can pick                          |
+| `RUNNER_DURATIONS`        | `15s,30s,60s`            | Durations visitors can pick (whole seconds, 10s or more)         |
+| `RUNNER_MAX_TOTAL_RATE`   | `2000`                   | Most requests per second one test may send across all its servers |
+| `RUNNER_RATE`             | `500`                    | Preselected rate (one of `RUNNER_RATES`)                         |
+| `RUNNER_DURATION`         | `30s`                    | Preselected duration (one of `RUNNER_DURATIONS`)                 |
 | `RUNNER_COOLDOWN`         | `60s`                    | Pause after each visitor test before the next can start          |
-| `RUNNER_MATCH_RATE`       | `RUNNER_RATE`            | Requests per second to each server in a head-to-head race        |
 | `RUNNER_PER_IP_HOURLY`    | `3`                      | Visitor tests each client IP can start per hour                  |
 | `ALERT_WEBHOOK_URL`       | unset                    | Chat webhook for alert notifications; unset means none           |
 | `ALERT_WEBHOOK_TYPE`      | `discord`                | `discord`, `slack`, `teams`, `googlechat` or `webhook`           |

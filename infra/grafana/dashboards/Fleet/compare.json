@@ -228,7 +228,7 @@
       "transparent": true,
       "options": {
         "mode": "markdown",
-        "content": "**Test conditions.** Every server, the k6 load generator, Grafana and Prometheus share one small VPS (alongside unrelated sites), so results are noisy and k6 competes with the server under test for CPU. Each server runs with `WORKERS=2`. Visitor tests use the `load` script at a constant rate (500 req/s for 30 s by default); `break` runs ramp to 1000 virtual users over 60 s. Read this as a rough comparison, not a rigorous ranking.",
+        "content": "**Test conditions.** Every server, the k6 load generator, Grafana and Prometheus share one small VPS (alongside unrelated sites), so results are noisy and k6 competes with the server under test for CPU. Servers use two threads or processes (`WORKERS=2`) where they can; FastAPI, Node and Bun run one process. Visitors pick each test's shape (steady, ramp or spike), rate (100-2000 req/s per server), duration and request mix (mostly reads, write-heavy or health checks), so compare runs with the same settings. Read this as a rough comparison, not a rigorous ranking.",
         "code": {
           "language": "plaintext"
         }
@@ -255,7 +255,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (testid, server, script) (max_over_time(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[$__range]))",
+          "expr": "sum by (testid, server, script, shape, mix, rate) (max_over_time(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[$__range]))",
           "legendFormat": "",
           "refId": "A",
           "range": false,
@@ -267,7 +267,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max_over_time((sum by (testid, server, script) (rate(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[5s])))[$__range:1s])",
+          "expr": "max_over_time((sum by (testid, server, script, shape, mix, rate) (rate(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[5s])))[$__range:1s])",
           "legendFormat": "",
           "refId": "B",
           "range": false,
@@ -279,7 +279,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum by (testid, server, script) (max_over_time(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\",expected_response=\"false\"}[$__range])) or sum by (testid, server, script) (max_over_time(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[$__range])) * 0) / sum by (testid, server, script) (max_over_time(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[$__range]))",
+          "expr": "(sum by (testid, server, script, shape, mix, rate) (max_over_time(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\",expected_response=\"false\"}[$__range])) or sum by (testid, server, script, shape, mix, rate) (max_over_time(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[$__range])) * 0) / sum by (testid, server, script, shape, mix, rate) (max_over_time(k6_http_reqs_total{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[$__range]))",
           "legendFormat": "",
           "refId": "C",
           "range": false,
@@ -291,7 +291,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "quantile_over_time(0.5, (max by (testid, server, script) (k6_http_req_duration_p95{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}))[$__range:2s])",
+          "expr": "quantile_over_time(0.5, (max by (testid, server, script, shape, mix, rate) (k6_http_req_duration_p95{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}))[$__range:2s])",
           "legendFormat": "",
           "refId": "E",
           "range": false,
@@ -303,7 +303,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "quantile_over_time(0.5, (max by (testid, server, script) (k6_http_req_duration_p99{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}))[$__range:2s])",
+          "expr": "quantile_over_time(0.5, (max by (testid, server, script, shape, mix, rate) (k6_http_req_duration_p99{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}))[$__range:2s])",
           "legendFormat": "",
           "refId": "F",
           "range": false,
@@ -315,7 +315,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max by (testid, server, script) (max_over_time(k6_http_req_duration_p99{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[$__range]))",
+          "expr": "max by (testid, server, script, shape, mix, rate) (max_over_time(k6_http_req_duration_p99{testid=~\"$testid\",server=~\"$server\",group!~\"::setup|::teardown\"}[$__range]))",
           "legendFormat": "",
           "refId": "G",
           "range": false,
@@ -327,7 +327,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max by (testid, server, script) (max_over_time(k6_vus{testid=~\"$testid\",server=~\"$server\"}[$__range]))",
+          "expr": "max by (testid, server, script, shape, mix, rate) (max_over_time(k6_vus{testid=~\"$testid\",server=~\"$server\"}[$__range]))",
           "legendFormat": "",
           "refId": "H",
           "range": false,
@@ -349,7 +349,10 @@
             "indexByName": {
               "testid": 0,
               "server": 1,
-              "script": 2
+              "script": 2,
+              "shape": 3,
+              "mix": 4,
+              "rate": 5
             }
           }
         },
@@ -436,6 +439,58 @@
               {
                 "id": "displayName",
                 "value": "Script"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "shape"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Shape"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "mix"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Mix"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rate"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Peak rate"
+              },
+              {
+                "id": "unit",
+                "value": "reqps"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
               }
             ]
           },
