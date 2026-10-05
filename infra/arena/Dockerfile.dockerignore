@@ -1,0 +1,7 @@
+*
+!bench/k6/src
+!infra/servers.json
+!infra/arena/arena-serve
+!servers/fastapi/requirements.txt
+!servers/flask/requirements.txt
+!servers/django/requirements.txt
