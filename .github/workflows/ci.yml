@@ -106,6 +106,9 @@ jobs:
           - { name: fastify, context: servers, file: servers/fastify/Dockerfile }
           - { name: runner, context: ., file: infra/runner/Dockerfile }
     name: image (${{ matrix.name }})
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
@@ -133,6 +136,21 @@ jobs:
           else
             echo "no todo API yet: health check only"
           fi
+      # The VPS pulls these instead of building (infra/deploy.sh); the cache makes this a re-tag and upload
+      - if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: true
+          tags: ghcr.io/${{ github.repository }}/${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
 
   # Pulls the tested commit on the VPS and runs infra/deploy.sh there.
   # Needs secrets VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS and
@@ -148,6 +166,9 @@ jobs:
     concurrency:
       group: deploy-production
       cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Configure SSH
         env:
@@ -164,14 +185,20 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           APP_DIR: ${{ vars.VPS_APP_DIR }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [[ -z "$APP_DIR" || -z "$VPS_HOST" ]]; then
             echo "::error::Set VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS and VPS_APP_DIR in the production environment"
             exit 1
           fi
-          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+          # The VPS pulls the images this run pushed. It logs in with this job's token
+          # (valid only while the job runs) and logs out again when done.
+          printf '%s\n' "$GHCR_TOKEN" | ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             "$VPS_USER@$VPS_HOST" \
-            "set -e; cd '$APP_DIR' && git fetch --quiet origin main && git reset --hard '${{ github.sha }}' && infra/deploy.sh"
+            "set -e; trap 'docker logout ghcr.io >/dev/null 2>&1' EXIT
+             docker login ghcr.io -u '${{ github.actor }}' --password-stdin >/dev/null
+             cd '$APP_DIR' && git fetch --quiet origin main && git reset --hard '${{ github.sha }}'
+             IMAGE_REGISTRY='ghcr.io/${{ github.repository }}' IMAGE_TAG='${{ github.sha }}' infra/deploy.sh"
 
       - name: Public site answers
         run: |

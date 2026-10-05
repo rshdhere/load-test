@@ -94,8 +94,20 @@ else
   echo "alert notifications: off (set ALERT_WEBHOOK_URL in infra/.env)"
 fi
 
-"${compose[@]}" build --pull
-"${compose[@]}" up -d --remove-orphans --wait --wait-timeout 300
+# CI builds and pushes every image, so a deploy from CI only pulls them
+# (compose.yaml reads IMAGE_REGISTRY and IMAGE_TAG). Run by hand without them,
+# the images are built here instead, which takes long on a small VPS.
+if [[ -n "${IMAGE_TAG:-}" ]]; then
+  export IMAGE_REGISTRY IMAGE_TAG
+  "${compose[@]}" pull --quiet
+  "${compose[@]}" up -d --no-build --remove-orphans --wait --wait-timeout 300
+  # Drop this stack's images from earlier deploys, and nothing else on the machine
+  docker images --format '{{.Repository}}:{{.Tag}}' \
+    | grep "^${IMAGE_REGISTRY}/" | grep -v ":${IMAGE_TAG}\$" | xargs -r docker rmi >/dev/null 2>&1 || true
+else
+  "${compose[@]}" build --pull
+  "${compose[@]}" up -d --remove-orphans --wait --wait-timeout 300
+fi
 docker image prune -f >/dev/null
 
 # Config files are bind-mounted, so `up` does not restart anything when only
