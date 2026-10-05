@@ -243,7 +243,10 @@ services:
     build: { context: .., dockerfile: infra/runner/Dockerfile }
     image: ${IMAGE_REGISTRY:-o11y}/runner:${IMAGE_TAG:-local}
     environment:
-      RUNNER_SCRIPT: ${RUNNER_SCRIPT:-load}
+      # The menus visitors pick a test from, and the budget across all servers in one test
+      RUNNER_RATES: ${RUNNER_RATES:-100,250,500,1000,2000}
+      RUNNER_DURATIONS: ${RUNNER_DURATIONS:-15s,30s,60s}
+      RUNNER_MAX_TOTAL_RATE: ${RUNNER_MAX_TOTAL_RATE:-2000}
       RUNNER_RATE: ${RUNNER_RATE:-500}
       RUNNER_DURATION: ${RUNNER_DURATION:-30s}
       RUNNER_COOLDOWN: ${RUNNER_COOLDOWN:-60s}
@@ -256,6 +259,8 @@ services:
       - runner-results:/results
     ports: ["127.0.0.1:3121:8080"]
     networks: [o11y]
+    # k6 runs in here; a big visitor test fails on its own rather than starving the machine
+    mem_limit: 768m
     restart: unless-stopped
 
 networks:
