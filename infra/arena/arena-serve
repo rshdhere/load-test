@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Starts one server in the arena, pinned to CPUs, on its servers.json port.
+#   arena-serve <server> <cpu list, e.g. 0-3>
+# WORKERS matches the CPUs it gets, so multi-threaded servers use all of them.
+set -euo pipefail
+name=${1:?usage: arena-serve <server> <cpus>}
+cpus=${2:?usage: arena-serve <server> <cpus>}
+port=$(python3 -c 'import json,sys; print(next(s["port"] for s in json.load(open("/arena/servers.json")) if s["name"] == sys.argv[1]))' "$name")
+count=$(( $(cut -d- -f2 <<<"$cpus") - $(cut -d- -f1 <<<"$cpus") + 1 ))
+export PORT=$port WORKERS=$count SPEC_PATH=/app/openapi.json
+
+case $name in
+  actix|axum|tokio) cd /tmp && exec taskset -c "$cpus" "$name-server" ;;
+  go|gin|fiber)     cd "/app/$name" && exec taskset -c "$cpus" "./$name-server" ;;
+  fastapi)          cd /app/fastapi && exec taskset -c "$cpus" python main.py ;;
+  flask|django)     cd "/app/$name" && exec taskset -c "$cpus" gunicorn ;;
+  bun)              cd /app/bun && exec taskset -c "$cpus" bun run src/index.ts ;;
+  node|express|fastify) cd "/app/$name" && exec taskset -c "$cpus" node src/index.ts ;;
+  *) echo "unknown server: $name" >&2; exit 1 ;;
+esac
