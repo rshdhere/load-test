@@ -3,6 +3,8 @@ name: load-bench
 # Servers under test. Each listens on its own port from infra/servers.json, the
 # same inside the container and on the host (127.0.0.1 only), so Beyla can tell
 # them apart by port and instrument nothing else on the machine.
+# Images come from CI (ghcr.io, tagged with the commit) when infra/deploy.sh is
+# given IMAGE_REGISTRY and IMAGE_TAG; otherwise they are built here as o11y/<name>:local.
 x-server: &server
   restart: unless-stopped
   networks: [o11y]
@@ -11,79 +13,79 @@ services:
   actix:
     <<: *server
     build: { context: ../servers, dockerfile: actix/Dockerfile }
-    image: o11y/actix:local
+    image: ${IMAGE_REGISTRY:-o11y}/actix:${IMAGE_TAG:-local}
     environment: { PORT: "3101", WORKERS: "${WORKERS:-2}" }
     ports: ["127.0.0.1:3101:3101"]
   axum:
     <<: *server
     build: { context: ../servers, dockerfile: axum/Dockerfile }
-    image: o11y/axum:local
+    image: ${IMAGE_REGISTRY:-o11y}/axum:${IMAGE_TAG:-local}
     environment: { PORT: "3102", WORKERS: "${WORKERS:-2}" }
     ports: ["127.0.0.1:3102:3102"]
   tokio:
     <<: *server
     build: { context: ../servers, dockerfile: tokio/Dockerfile }
-    image: o11y/tokio:local
+    image: ${IMAGE_REGISTRY:-o11y}/tokio:${IMAGE_TAG:-local}
     environment: { PORT: "3103", WORKERS: "${WORKERS:-2}" }
     ports: ["127.0.0.1:3103:3103"]
   go:
     <<: *server
     build: { context: ../servers, dockerfile: go/Dockerfile }
-    image: o11y/go:local
+    image: ${IMAGE_REGISTRY:-o11y}/go:${IMAGE_TAG:-local}
     environment: { PORT: "3104", WORKERS: "${WORKERS:-2}" }
     ports: ["127.0.0.1:3104:3104"]
   gin:
     <<: *server
     build: { context: ../servers, dockerfile: gin/Dockerfile }
-    image: o11y/gin:local
+    image: ${IMAGE_REGISTRY:-o11y}/gin:${IMAGE_TAG:-local}
     environment: { PORT: "3105", WORKERS: "${WORKERS:-2}" }
     ports: ["127.0.0.1:3105:3105"]
   fiber:
     <<: *server
     build: { context: ../servers, dockerfile: fiber/Dockerfile }
-    image: o11y/fiber:local
+    image: ${IMAGE_REGISTRY:-o11y}/fiber:${IMAGE_TAG:-local}
     environment: { PORT: "3106", WORKERS: "${WORKERS:-2}" }
     ports: ["127.0.0.1:3106:3106"]
   fastapi:
     <<: *server
     build: { context: ../servers, dockerfile: fastapi/Dockerfile }
-    image: o11y/fastapi:local
+    image: ${IMAGE_REGISTRY:-o11y}/fastapi:${IMAGE_TAG:-local}
     environment: { PORT: "3107", WORKERS: "${WORKERS:-2}" }
     ports: ["127.0.0.1:3107:3107"]
   flask:
     <<: *server
     build: { context: ../servers, dockerfile: flask/Dockerfile }
-    image: o11y/flask:local
+    image: ${IMAGE_REGISTRY:-o11y}/flask:${IMAGE_TAG:-local}
     environment: { PORT: "3108", WORKERS: "${WORKERS:-2}" }
     ports: ["127.0.0.1:3108:3108"]
   django:
     <<: *server
     build: { context: ../servers, dockerfile: django/Dockerfile }
-    image: o11y/django:local
+    image: ${IMAGE_REGISTRY:-o11y}/django:${IMAGE_TAG:-local}
     environment: { PORT: "3109", WORKERS: "${WORKERS:-2}" }
     ports: ["127.0.0.1:3109:3109"]
   bun:
     <<: *server
     build: { context: ../servers, dockerfile: bun/Dockerfile }
-    image: o11y/bun:local
+    image: ${IMAGE_REGISTRY:-o11y}/bun:${IMAGE_TAG:-local}
     environment: { PORT: "3110", WORKERS: "${WORKERS:-2}" }
     ports: ["127.0.0.1:3110:3110"]
   node:
     <<: *server
     build: { context: ../servers, dockerfile: node/Dockerfile }
-    image: o11y/node:local
+    image: ${IMAGE_REGISTRY:-o11y}/node:${IMAGE_TAG:-local}
     environment: { PORT: "3111", WORKERS: "${WORKERS:-2}" }
     ports: ["127.0.0.1:3111:3111"]
   express:
     <<: *server
     build: { context: ../servers, dockerfile: express/Dockerfile }
-    image: o11y/express:local
+    image: ${IMAGE_REGISTRY:-o11y}/express:${IMAGE_TAG:-local}
     environment: { PORT: "3112", WORKERS: "${WORKERS:-2}" }
     ports: ["127.0.0.1:3112:3112"]
   fastify:
     <<: *server
     build: { context: ../servers, dockerfile: fastify/Dockerfile }
-    image: o11y/fastify:local
+    image: ${IMAGE_REGISTRY:-o11y}/fastify:${IMAGE_TAG:-local}
     environment: { PORT: "3113", WORKERS: "${WORKERS:-2}" }
     ports: ["127.0.0.1:3113:3113"]
 
@@ -239,7 +241,7 @@ services:
   # Lets visitors start one load test at a time; the host's nginx proxies /run/ to it
   runner:
     build: { context: .., dockerfile: infra/runner/Dockerfile }
-    image: o11y/runner:local
+    image: ${IMAGE_REGISTRY:-o11y}/runner:${IMAGE_TAG:-local}
     environment:
       RUNNER_SCRIPT: ${RUNNER_SCRIPT:-load}
       RUNNER_RATE: ${RUNNER_RATE:-500}

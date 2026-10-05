@@ -135,15 +135,15 @@ git pull
 infra/deploy.sh
 ```
 
-`deploy.sh` rebuilds, restarts the stack with `--remove-orphans`, and fails unless Grafana and the runner answer on `127.0.0.1` and Grafana reaches Loki and Tempo. Config files are bind-mounted, so it also reloads what `up` would not: Prometheus, blackbox and Alloy on SIGHUP, Grafana's alert rules through its API, and it restarts Loki, Tempo or Beyla when their config file changed since they started. It never touches the nginx site, because certbot edits the installed copy; after changing `nginx/o11y.conf`, apply the change to `/etc/nginx/conf.d/o11y.conf` yourself. It also refuses to start if another program already holds one of the stack's host ports.
+Deploys from CI pull the images CI already built (`ghcr.io/rshdhere/load-test/<name>:<commit>`), so they take about a minute; `deploy.sh` only builds on the VPS when run by hand without `IMAGE_REGISTRY` and `IMAGE_TAG`, which takes long on a small machine. To deploy a CI-built commit by hand: `docker login ghcr.io` with a token that can read packages, then `IMAGE_REGISTRY=ghcr.io/rshdhere/load-test IMAGE_TAG=<full commit sha> infra/deploy.sh`. `deploy.sh` restarts the stack with `--remove-orphans`, removes this stack's images from earlier deploys (and nothing else), and fails unless Grafana and the runner answer on `127.0.0.1` and Grafana reaches Loki and Tempo. Config files are bind-mounted, so it also reloads what `up` would not: Prometheus, blackbox and Alloy on SIGHUP, Grafana's alert rules through its API, and it restarts Loki, Tempo or Beyla when their config file changed since they started. It never touches the nginx site, because certbot edits the installed copy; after changing `nginx/o11y.conf`, apply the change to `/etc/nginx/conf.d/o11y.conf` yourself. It also refuses to start if another program already holds one of the stack's host ports.
 
 ### CI/CD
 
 `.github/workflows/ci.yml` runs on every push and pull request:
 
 - **checks**: dashboards, `prometheus/targets.json` and `beyla/beyla.yaml` match `generate.py`; the compose file, Prometheus, Loki, Alloy and Tempo configs and the nginx site are valid (each checked by its own binary); the runner is gofmt-clean, vets and builds; the k6 scripts typecheck; and the shell scripts pass shellcheck
-- **images**: builds all 14 images (cached between runs)
-- **deploy** (`main` only, after both pass): SSHes into the VPS, resets the checkout to the tested commit, runs `infra/deploy.sh`, then checks <https://o11y.raashed.com> answers
+- **images**: builds all 14 images (cached between runs), runs `servers/conformance.py` against each server that serves the todo API, and on `main` pushes them to GHCR tagged with the commit
+- **deploy** (`main` only, after both pass): SSHes into the VPS, logs it into GHCR with the job's short-lived token, resets the checkout to the tested commit, runs `infra/deploy.sh` to pull that commit's images and restart, logs out, then checks <https://o11y.raashed.com> answers
 
 Deploy uses the `production` environment, so it can be gated with required reviewers in the repository settings. It fails with a clear error until these are set in that environment:
 
