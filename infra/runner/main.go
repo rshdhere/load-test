@@ -36,11 +36,12 @@ type server struct {
 }
 
 type run struct {
-	Servers []string  `json:"servers"`
-	Match   bool      `json:"match"`  // a head-to-head race rather than a single-server test
-	TestID  string    `json:"testid"` // the k6 testid, or the match id for a race
-	Started time.Time `json:"started"`
-	Ends    time.Time `json:"ends"`
+	Servers  []string  `json:"servers"`
+	Match    bool      `json:"match"`  // a head-to-head race rather than a single-server test
+	TestID   string    `json:"testid"` // the k6 testid, or the match id for a race
+	Settings settings  `json:"settings"`
+	Started  time.Time `json:"started"`
+	Ends     time.Time `json:"ends"`
 }
 
 // Label names the run for people and metrics: "go" or "go vs bun".
@@ -63,10 +64,7 @@ const minMatch, maxMatch = 2, 3
 type config struct {
 	addr        string
 	scriptsDir  string
-	script      string
-	rate        int
-	matchRate   int // requests per second to each server in a race
-	duration    time.Duration
+	menu        menu // the test settings visitors choose from
 	cooldown    time.Duration
 	perIPHourly int
 	remoteWrite string
@@ -90,20 +88,18 @@ func main() {
 	cfg := config{
 		addr:        env("RUNNER_ADDR", ":8080"),
 		scriptsDir:  env("RUNNER_SCRIPTS_DIR", "/scripts"),
-		script:      env("RUNNER_SCRIPT", "load"),
-		rate:        envInt("RUNNER_RATE", 500),
-		duration:    envDuration("RUNNER_DURATION", 30*time.Second),
 		cooldown:    envDuration("RUNNER_COOLDOWN", 60*time.Second),
 		perIPHourly: envInt("RUNNER_PER_IP_HOURLY", 3),
 		remoteWrite: env("RUNNER_REMOTE_WRITE", "http://prometheus:9090/api/v1/write"),
 		commit:      env("GIT_COMMIT", "dev"),
 	}
-	cfg.matchRate = envInt("RUNNER_MATCH_RATE", cfg.rate)
 	shutdown := setupTelemetry(cfg.commit)
 	defer shutdown(context.Background())
-	if cfg.script != "load" && cfg.script != "break" {
-		fatal("RUNNER_SCRIPT must be load or break", "got", cfg.script)
+	m, err := loadMenu()
+	if err != nil {
+		fatal("invalid test settings menu", "error", err)
 	}
+	cfg.menu = m
 
 	raw, err := os.ReadFile(env("RUNNER_SERVERS_FILE", "/etc/runner/servers.json"))
 	if err != nil {
@@ -133,8 +129,8 @@ func main() {
 			return req.Method + " " + req.URL.Path
 		}))
 
-	slog.Info("runner listening", "addr", cfg.addr, "script", cfg.script, "rate", cfg.rate,
-		"match_rate", cfg.matchRate, "duration", cfg.duration.String(), "cooldown", cfg.cooldown.String(),
+	slog.Info("runner listening", "addr", cfg.addr, "rates", m.Rates, "durations", fmt.Sprint(m.Durations),
+		"max_total_rate", m.MaxTotal, "cooldown", cfg.cooldown.String(),
 		"per_ip_hourly", cfg.perIPHourly, "commit", cfg.commit)
 	fatal("server stopped", "error", http.ListenAndServe(cfg.addr, handler))
 }
@@ -208,6 +204,16 @@ func (r *runner) launch(w http.ResponseWriter, req *http.Request, page pageData,
 		r.reject(w, page, http.StatusForbidden, "cross-site", "Load tests can only be started from this site.")
 		return
 	}
+	if err := req.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	chosen, problem := r.cfg.menu.parse(req.PostForm, len(servers))
+	page.Chosen = &chosen
+	if problem != "" {
+		r.reject(w, page, http.StatusBadRequest, "invalid-settings", problem)
+		return
+	}
 
 	ip := clientIP(req)
 	now := time.Now()
@@ -236,8 +242,8 @@ func (r *runner) launch(w http.ResponseWriter, req *http.Request, page pageData,
 	r.byIP[ip] = append(recent, now)
 	match := len(servers) > 1
 	stamp := now.UTC().Format("20060102-150405")
-	cur := &run{Servers: servers, Match: match, Started: now, Ends: now.Add(r.expected(match)),
-		TestID: fmt.Sprintf("%s-%s-web-%s", servers[0], r.cfg.script, stamp)}
+	cur := &run{Servers: servers, Match: match, Settings: chosen, Started: now, Ends: now.Add(chosen.Duration),
+		TestID: fmt.Sprintf("%s-%s-%drps-web-%s", servers[0], chosen.Shape, chosen.Rate, stamp)}
 	if match {
 		cur.TestID = "match-web-" + stamp
 	}
@@ -253,9 +259,14 @@ func (r *runner) launch(w http.ResponseWriter, req *http.Request, page pageData,
 			attribute.StringSlice("loadtest.servers", servers),
 			attribute.String("loadtest.testid", cur.TestID),
 			attribute.Bool("loadtest.match", match),
+			attribute.String("loadtest.shape", chosen.Shape),
+			attribute.String("loadtest.mix", chosen.Mix),
+			attribute.Int("loadtest.rate", chosen.Rate),
+			attribute.String("loadtest.duration", chosen.Duration.String()),
 			attribute.String("client.address", ip),
 		))
 	slog.InfoContext(ctx, "load test started", "testid", cur.TestID, "servers", servers, "match", match,
+		"shape", chosen.Shape, "mix", chosen.Mix, "rate", chosen.Rate, "duration", chosen.Duration.String(),
 		"client_ip", ip)
 	go r.execute(ctx, span, cur)
 
@@ -293,7 +304,7 @@ func (r *runner) metrics(w http.ResponseWriter, _ *http.Request) {
 
 	fmt.Fprintln(w, "# HELP o11y_runner_rejections_total Start requests turned away, by reason.")
 	fmt.Fprintln(w, "# TYPE o11y_runner_rejections_total counter")
-	for _, reason := range []string{"busy", "cooldown", "rate-limit", "cross-site"} {
+	for _, reason := range []string{"busy", "cooldown", "rate-limit", "cross-site", "invalid-settings"} {
 		fmt.Fprintf(w, "o11y_runner_rejections_total{reason=%q} %d\n", reason, r.rejected[reason])
 	}
 
@@ -308,7 +319,7 @@ func (r *runner) metrics(w http.ResponseWriter, _ *http.Request) {
 
 func (r *runner) execute(parent context.Context, span trace.Span, cur *run) {
 	defer span.End()
-	ctx, cancel := context.WithTimeout(parent, r.expected(cur.Match)+time.Minute)
+	ctx, cancel := context.WithTimeout(parent, cur.Settings.Duration+time.Minute)
 	defer cancel()
 
 	health := func(name string) string {
@@ -324,25 +335,28 @@ func (r *runner) execute(parent context.Context, span trace.Span, cur *run) {
 			targets[i] = name + "=" + health(name)
 		}
 		args = append(args, "--tag", "script=match", r.cfg.scriptsDir+"/match.ts")
-		testEnv = []string{"TARGETS=" + strings.Join(targets, ","), "MATCH=" + cur.TestID,
-			"RATE=" + strconv.Itoa(r.cfg.matchRate)}
+		testEnv = []string{"TARGETS=" + strings.Join(targets, ","), "MATCH=" + cur.TestID}
 	} else {
+		// load.ts takes every shape; the script tag stays "load" so older runs line up
 		args = append(args, "--tag", "testid="+cur.TestID, "--tag", "server="+cur.Servers[0],
-			"--tag", "script="+r.cfg.script, r.cfg.scriptsDir+"/"+r.cfg.script+".ts")
-		testEnv = []string{"URL=" + health(cur.Servers[0]), "RATE=" + strconv.Itoa(r.cfg.rate)}
+			"--tag", "script=load", r.cfg.scriptsDir+"/load.ts")
+		testEnv = []string{"URL=" + health(cur.Servers[0])}
 	}
+	s := cur.Settings
 
 	cmd := exec.CommandContext(ctx, "k6", args...)
 	cmd.Env = append(append(os.Environ(), testEnv...),
-		"DURATION="+r.cfg.duration.String(),
+		"RATE="+strconv.Itoa(s.Rate),
+		"DURATION="+strconv.Itoa(s.Seconds())+"s",
+		"SHAPE="+s.Shape,
+		"MIX="+s.Mix,
 		"RESULTS_DIR=/results",
 		"K6_PROMETHEUS_RW_SERVER_URL="+r.cfg.remoteWrite,
 		"K6_PROMETHEUS_RW_TREND_STATS=p(50),p(90),p(95),p(99),avg,min,max",
 		"K6_PROMETHEUS_RW_PUSH_INTERVAL=1s",
 	)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	span.SetAttributes(attribute.String("loadtest.script", args[len(args)-1]),
-		attribute.String("loadtest.duration", r.expected(cur.Match).String()))
+	span.SetAttributes(attribute.String("loadtest.script", args[len(args)-1]))
 
 	result := "ok"
 	if err := cmd.Run(); err != nil {
@@ -365,15 +379,6 @@ func (r *runner) execute(parent context.Context, span trace.Span, cur *run) {
 	r.current = nil
 	r.idleAfter = time.Now().Add(r.cfg.cooldown)
 	r.mu.Unlock()
-}
-
-// expected is how long a run takes, so pages can show when it ends. Races
-// always run at a constant rate, whatever RUNNER_SCRIPT says.
-func (r *runner) expected(match bool) time.Duration {
-	if r.cfg.script == "break" && !match {
-		return 60 * time.Second
-	}
-	return r.cfg.duration
 }
 
 // ---------------------------------------------------------------- state and pages
@@ -399,29 +404,40 @@ func (r *runner) state(msg string) state {
 }
 
 type cfgView struct {
-	Script        string
-	Rate          int
-	MatchRate     int
-	Duration      string
-	MatchDuration string
-	PerIP         int
-	MinMatch      int
-	MaxMatch      int
+	Shapes    []choice
+	Mixes     []choice
+	Rates     []int
+	Durations []time.Duration
+	MaxTotal  int
+	Default   settings
+	Share     map[string]float64
+	PerIP     int
+	MinMatch  int
+	MaxMatch  int
 }
 
 func (r *runner) cfgView() cfgView {
-	return cfgView{Script: r.cfg.script, Rate: r.cfg.rate, MatchRate: r.cfg.matchRate,
-		Duration: r.expected(false).String(), MatchDuration: r.expected(true).String(), PerIP: r.cfg.perIPHourly,
-		MinMatch: minMatch, MaxMatch: maxMatch}
+	m := r.cfg.menu
+	return cfgView{Shapes: shapes, Mixes: mixes, Rates: m.Rates, Durations: m.Durations, MaxTotal: m.MaxTotal,
+		Default: m.Default, Share: share, PerIP: r.cfg.perIPHourly, MinMatch: minMatch, MaxMatch: maxMatch}
 }
 
 type pageData struct {
-	Server  *server  // single-server test page
-	Compare bool     // head-to-head page
-	Picked  []string // servers ticked on the head-to-head page
+	Server  *server   // single-server test page
+	Compare bool      // head-to-head page
+	Picked  []string  // servers ticked on the head-to-head page
+	Chosen  *settings // settings to preselect; the defaults when nil
 	Servers []server
 	State   state
 	Cfg     cfgView
+}
+
+// Pick is the settings to preselect: what the visitor last submitted, else the defaults.
+func (d pageData) Pick() settings {
+	if d.Chosen != nil {
+		return *d.Chosen
+	}
+	return d.Cfg.Default
 }
 
 func (r *runner) reject(w http.ResponseWriter, page pageData, code int, reason, msg string) {
@@ -510,13 +526,14 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 var pageTmpl = template.Must(template.New("page").Funcs(template.FuncMap{
 	"secsLeft": func(t time.Time) int { return max(0, int(time.Until(t).Seconds())) },
 	"has":      slices.Contains[[]string],
+	"secs":     func(d time.Duration) string { return fmt.Sprintf("%ds", int(d.Seconds())) },
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{if .Server}}Load test {{.Server.Title}}{{else if .Compare}}Head to head{{else}}Load tests{{end}} · o11y</title>
-{{if and (or .State.Busy .State.CooldownSecs) (not .Compare)}}<meta http-equiv="refresh" content="5">{{end}}
+{{if and (or .State.Busy .State.CooldownSecs) (not .Compare) (not .Server)}}<meta http-equiv="refresh" content="5">{{end}}
 <style>
   :root { color-scheme: dark; --bg: #111217; --panel: #181b1f; --line: #2c3235; --text: #ccccdc;
           --muted: #8e8e9b; --accent: #3d71d9; --ok: #73bf69; --warn: #ff9830; }
@@ -551,6 +568,16 @@ var pageTmpl = template.Must(template.New("page").Funcs(template.FuncMap{
   .picks label:has(input:checked) { border-color: var(--accent); background: #1b2436; }
   .picks label:has(input:disabled) { opacity: .45; cursor: not-allowed; }
   .picks input { margin-top: 4px; accent-color: var(--accent); }
+  fieldset { border: 0; padding: 0; margin: 0 0 16px; }
+  legend { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+  .choices { display: flex; flex-wrap: wrap; gap: 6px; }
+  .choices label { display: inline-flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line);
+                   border-radius: 6px; padding: 8px 12px; cursor: pointer; max-width: 200px; }
+  .choices input { position: absolute; opacity: 0; pointer-events: none; }
+  .choices label:has(input:checked) { border-color: var(--accent); background: #1b2436; }
+  .choices label:has(input:disabled) { opacity: .4; cursor: not-allowed; }
+  .choices label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .estimate { color: var(--muted); margin: 4px 0 0; }
 </style>
 </head>
 <body><main>
@@ -574,7 +601,8 @@ var pageTmpl = template.Must(template.New("page").Funcs(template.FuncMap{
 <div class="card {{if .State.Busy}}busy{{end}}" id="state">
   <div class="status"><span class="dot"></span>
   {{if .State.Busy}}
-    <strong>Running:</strong>&nbsp;{{.State.Current.Label}}, about {{secsLeft .State.Current.Ends}}s left ·
+    <strong>Running:</strong>&nbsp;{{.State.Current.Label}} ({{.State.Current.Settings.Shape}},
+    {{.State.Current.Settings.Rate}} req/s), about {{secsLeft .State.Current.Ends}}s left ·
     <a href="{{.State.Current.Watch}}">watch it live</a>
   {{else if .State.CooldownSecs}}
     <strong>Cooling down</strong>&nbsp;for {{.State.CooldownSecs}}s after the last test
@@ -586,46 +614,57 @@ var pageTmpl = template.Must(template.New("page").Funcs(template.FuncMap{
 
 {{if .Server}}
 <div class="card">
-  <dl>
-    <dt>Test</dt><dd>{{if eq .Cfg.Script "break"}}Ramp 0 → 1000 virtual users{{else}}{{.Cfg.Rate}} requests per second{{end}} for {{.Cfg.Duration}}</dd>
-    <dt>Requests</dt><dd>a todo-app mix (list, read, create, update, delete, a few bad requests) on servers with the todo API, else <code>GET /api/v1/health</code></dd>
-    <dt>Model</dt><dd>{{.Server.Concurrency}}</dd>
-  </dl>
-  <form method="post" action="/run/{{.Server.Name}}" style="margin-top:20px">
+  <p class="sub" style="margin-bottom:16px">{{.Server.Concurrency}}</p>
+  <form method="post" action="/run/{{.Server.Name}}" id="test">
+    {{template "settings" .}}
     <button type="submit" {{if or .State.Busy .State.CooldownSecs}}disabled{{end}}>▶ Start load test</button>
   </form>
   <p><small>You'll be taken to the live dashboard. Limit: {{.Cfg.PerIP}} tests per hour per visitor.</small></p>
 </div>
 {{else if .Compare}}
 <div class="card">
-  <form method="post" action="/run/compare" id="race">
+  <form method="post" action="/run/compare" id="test">
     <div class="picks">{{$picked := .Picked}}{{range .Servers}}
       <label><input type="checkbox" name="server" value="{{.Name}}" {{if has $picked .Name}}checked{{end}}>
         <span><strong>{{.Title}}</strong><br><small>{{.Language}}</small></span></label>{{end}}
     </div>
-    <dl>
-      <dt>Test</dt><dd>{{.Cfg.MatchRate}} requests per second to each server, all at once, for {{.Cfg.MatchDuration}}</dd>
-      <dt>Requests</dt><dd>a todo-app mix (list, read, create, update, delete, a few bad requests) on servers with the todo API, else <code>GET /api/v1/health</code></dd>
-    </dl>
-    <button type="submit" style="margin-top:20px" {{if or .State.Busy .State.CooldownSecs}}disabled{{end}}>▶ Start race</button>
+    {{template "settings" .}}
+    <button type="submit" {{if or .State.Busy .State.CooldownSecs}}disabled{{end}}>▶ Start race</button>
   </form>
   <p><small>They share one machine, so a CPU-hungry server can slow its rivals down; that is part of the race.
   Counts as one test toward the limit of {{.Cfg.PerIP}} per hour per visitor.</small></p>
 </div>
+{{end}}
+
+{{if or .Server .Compare}}
 <script>
-  // Allow at most {{.Cfg.MaxMatch}} picks and only enable the button for {{.Cfg.MinMatch}}-{{.Cfg.MaxMatch}}
-  const form = document.getElementById('race')
-  const button = form.querySelector('button')
+  const form = document.getElementById('test')
+  const button = form.querySelector('button[type=submit]')
+  const estimate = document.getElementById('estimate')
+  const maxTotal = {{.Cfg.MaxTotal}}
+  const share = {{.Cfg.Share}}
   let blocked = button.disabled
+  const picked = () => [...form.querySelectorAll('input[name=server]')]
+  // (no backticks: this page is a Go raw string)
+  const value = (name) => form.querySelector('input[name=' + name + ']:checked')?.value
   const sync = () => {
-    const boxes = [...form.querySelectorAll('input[name=server]')]
-    const n = boxes.filter((b) => b.checked).length
+    const boxes = picked()
+    const race = boxes.length > 0
+    const n = race ? boxes.filter((b) => b.checked).length : 1
+    // At most {{.Cfg.MaxMatch}} racers
     boxes.forEach((b) => { b.disabled = !b.checked && n >= {{.Cfg.MaxMatch}} })
-    button.disabled = blocked || n < {{.Cfg.MinMatch}}
+    // Rates over the budget for this many servers can't be picked; fall back to the highest that fits
+    const rates = [...form.querySelectorAll('input[name=rate]')]
+    rates.forEach((r) => { r.disabled = Number(r.value) * Math.max(n, 1) > maxTotal })
+    if (value('rate') === undefined) rates.filter((r) => !r.disabled).at(-1).checked = true
+    const total = Number(value('rate')) * parseInt(value('duration')) * share[value('shape')] * Math.max(n, 1)
+    estimate.textContent = 'About ' + Math.round(total).toLocaleString() + ' requests in total' +
+      (race ? ', ' + Math.round(total / Math.max(n, 1)).toLocaleString() + ' to each server.' : '.')
+    button.disabled = blocked || (race && n < {{.Cfg.MinMatch}})
   }
   form.addEventListener('change', sync)
   sync()
-  // Instead of reloading (which would lose the picks), poll until the runner is free
+  // Instead of reloading (which would lose the choices), poll until the runner is free
   if (blocked) {
     const poll = setInterval(async () => {
       const s = await fetch('/run/status').then((r) => r.json()).catch(() => null)
@@ -644,4 +683,23 @@ var pageTmpl = template.Must(template.New("page").Funcs(template.FuncMap{
 {{end}}
 </main></body>
 </html>
+{{define "settings"}}{{$pick := .Pick}}
+    <fieldset><legend>Shape</legend><div class="choices">{{range .Cfg.Shapes}}
+      <label title="{{.Hint}}"><input type="radio" name="shape" value="{{.Value}}" {{if eq .Value $pick.Shape}}checked{{end}}>
+        <strong>{{.Label}}</strong><small>{{.Hint}}</small></label>{{end}}
+    </div></fieldset>
+    <fieldset><legend>Peak rate, per server</legend><div class="choices">{{range .Cfg.Rates}}
+      <label><input type="radio" name="rate" value="{{.}}" {{if eq . $pick.Rate}}checked{{end}}><strong>{{.}} req/s</strong></label>{{end}}
+    </div></fieldset>
+    <fieldset><legend>Duration</legend><div class="choices">{{range .Cfg.Durations}}
+      <label><input type="radio" name="duration" value="{{secs .}}" {{if eq . $pick.Duration}}checked{{end}}><strong>{{secs .}}</strong></label>{{end}}
+    </div></fieldset>
+    <fieldset><legend>Requests</legend><div class="choices">{{range .Cfg.Mixes}}
+      <label title="{{.Hint}}"><input type="radio" name="mix" value="{{.Value}}" {{if eq .Value $pick.Mix}}checked{{end}}>
+        <strong>{{.Label}}</strong><small>{{.Hint}}</small></label>{{end}}
+    </div></fieldset>
+    <p class="estimate" id="estimate"></p>
+    <p><small>Up to {{.Cfg.MaxTotal}} requests per second in total, so this small machine keeps serving everything
+    else. Servers without the todo API get health checks.</small></p>
+{{end}}
 `))

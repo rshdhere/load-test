@@ -376,8 +376,10 @@ def tag_dropdown(title, tag):
 CONDITIONS = (
     "**Test conditions.** Every server, the k6 load generator, Grafana and Prometheus share one small VPS "
     "(alongside unrelated sites), so results are noisy and k6 competes with the server under test for CPU. "
-    "Each server runs with `WORKERS=2`. Visitor tests use the `load` script at a constant rate (500 req/s for "
-    "30 s by default); `break` runs ramp to 1000 virtual users over 60 s. Read this as a rough comparison, "
+    "Servers use two threads or processes (`WORKERS=2`) where they can; FastAPI, Node and Bun run one process. "
+    "Visitors pick each "
+    "test's shape (steady, ramp or spike), rate (100-2000 req/s per server), duration and request mix (mostly reads, "
+    "write-heavy or health checks), so compare runs with the same settings. Read this as a rough comparison, "
     "not a rigorous ranking.")
 
 
@@ -828,7 +830,7 @@ def live():
 def compare():
     L = Layout()
     L.add(text(CONDITIONS), 24, 3)
-    by = "testid, server, script"
+    by = "testid, server, script, shape, mix, rate"
     cols = [
         ("A", k6_requests(by), "Requests", "short"),
         ("B", k6_peak_rps(by), "Peak req/s", "reqps"),
@@ -844,6 +846,9 @@ def compare():
                                 "url": "/d/load-live?var-testid=${__value.raw}&${__url_time_range}"}])),
         by_name("server", prop("displayName", "Server"), server_link()),
         by_name("script", prop("displayName", "Script")),
+        by_name("shape", prop("displayName", "Shape"), prop("custom.width", 80)),
+        by_name("mix", prop("displayName", "Mix"), prop("custom.width", 80)),
+        by_name("rate", prop("displayName", "Peak rate"), prop("unit", "reqps"), prop("custom.width", 100)),
     ]
     for ref, _, name, unit in cols:
         p = [prop("displayName", name), prop("unit", unit)]
@@ -864,7 +869,8 @@ def compare():
            "transformations": [{"id": "merge", "options": {}},
                                {"id": "organize", "options": {"excludeByName": {"Time": True},
                                                               "indexByName": {"testid": 0, "server": 1,
-                                                                              "script": 2}}},
+                                                                              "script": 2, "shape": 3,
+                                                                              "mix": 4, "rate": 5}}},
                                {"id": "sortBy", "options": {"sort": [{"field": "Value #B", "desc": True}]}}],
            "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"},
                                                    "filterable": True}, "thresholds": BLUE},
@@ -896,7 +902,7 @@ def leaderboard():
     peak_mem = f"max_over_time(({mem} {under_load})[$__range:15s])"
     per_mb = f"{peak_rps} / ({peak_mem} / 1e6)"
     p99 = (f'quantile_over_time(0.5, (max by (server) (k6_http_req_duration_p99{{{load},script="load",'
-           f'rate="$rate"}}))[$__range:2s])')
+           f'rate="$rate",shape!~"ramp|spike",mix!~"writes|health"}}))[$__range:2s])')
 
     L.add(text(CONDITIONS), 24, 3)
     cols = [
@@ -921,7 +927,7 @@ def leaderboard():
     L.add({"type": "table", "title": "Leaderboard",
            "description": "Servers ranked by requests served per CPU core, over every load test in the time "
                           "range. Req/s per MB divides peak throughput by peak working-set memory under load. "
-                          "The p99 column only counts `load` runs at the selected rate, so it is like for like.",
+                          "The p99 column only counts steady, mostly-reads runs at the selected rate, so it is like for like.",
            "datasource": DS, "targets": [t(e, ref=r, instant=True, table=True) for r, e in cols],
            "transformations": [
                {"id": "merge", "options": {}},

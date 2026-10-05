@@ -193,7 +193,7 @@
       "transparent": true,
       "options": {
         "mode": "markdown",
-        "content": "**Test conditions.** Every server, the k6 load generator, Grafana and Prometheus share one small VPS (alongside unrelated sites), so results are noisy and k6 competes with the server under test for CPU. Each server runs with `WORKERS=2`. Visitor tests use the `load` script at a constant rate (500 req/s for 30 s by default); `break` runs ramp to 1000 virtual users over 60 s. Read this as a rough comparison, not a rigorous ranking.",
+        "content": "**Test conditions.** Every server, the k6 load generator, Grafana and Prometheus share one small VPS (alongside unrelated sites), so results are noisy and k6 competes with the server under test for CPU. Servers use two threads or processes (`WORKERS=2`) where they can; FastAPI, Node and Bun run one process. Visitors pick each test's shape (steady, ramp or spike), rate (100-2000 req/s per server), duration and request mix (mostly reads, write-heavy or health checks), so compare runs with the same settings. Read this as a rough comparison, not a rigorous ranking.",
         "code": {
           "language": "plaintext"
         }
@@ -209,7 +209,7 @@
     {
       "type": "table",
       "title": "Leaderboard",
-      "description": "Servers ranked by requests served per CPU core, over every load test in the time range. Req/s per MB divides peak throughput by peak working-set memory under load. The p99 column only counts `load` runs at the selected rate, so it is like for like.",
+      "description": "Servers ranked by requests served per CPU core, over every load test in the time range. Req/s per MB divides peak throughput by peak working-set memory under load. The p99 column only counts steady, mostly-reads runs at the selected rate, so it is like for like.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -256,7 +256,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "quantile_over_time(0.5, (max by (server) (k6_http_req_duration_p99{group!~\"::setup|::teardown\",script=\"load\",rate=\"$rate\"}))[$__range:2s])",
+          "expr": "quantile_over_time(0.5, (max by (server) (k6_http_req_duration_p99{group!~\"::setup|::teardown\",script=\"load\",rate=\"$rate\",shape!~\"ramp|spike\",mix!~\"writes|health\"}))[$__range:2s])",
           "legendFormat": "",
           "refId": "D",
           "range": false,
@@ -722,7 +722,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sort(quantile_over_time(0.5, (max by (server) (k6_http_req_duration_p99{group!~\"::setup|::teardown\",script=\"load\",rate=\"$rate\"}))[$__range:2s]))",
+          "expr": "sort(quantile_over_time(0.5, (max by (server) (k6_http_req_duration_p99{group!~\"::setup|::teardown\",script=\"load\",rate=\"$rate\",shape!~\"ramp|spike\",mix!~\"writes|health\"}))[$__range:2s]))",
           "legendFormat": "{{server}}",
           "refId": "A",
           "range": false,
